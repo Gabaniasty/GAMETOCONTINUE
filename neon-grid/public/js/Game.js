@@ -1,5 +1,6 @@
 import { Controls }            from './Controls.js';
 import { buildWeapon }         from './WeaponBuilder.js';
+import { AWPWeapon }           from './AWPWeapon.js';
 import { MapLoader }           from './MapLoader.js';
 import { CharacterController } from './CharacterController.js';
 
@@ -79,11 +80,18 @@ export class Game {
     wLight.position.set(0, 1, 0);
     this.weaponScene.add(wLight);
 
-    this._gunGroup = buildWeapon(this._localClass);
-    this._GUN_BASE = { x: 0.2, y: -0.22, z: -0.35, rx: 0.03, rz: -0.04 };
-    this._gunGroup.position.set(0.2, -0.22, -0.35);
-    this._gunGroup.rotation.set(0.03, 0, -0.04);
-    this.weaponScene.add(this._gunGroup);
+    // AWP replaces the old WRAITH weapon model
+    if (this._localClass === 'WRAITH') {
+      // AWP is wired later via initAWP() once sound is available
+      this._gunGroup = null;
+      this._awpWeapon = null;
+    } else {
+      this._gunGroup = buildWeapon(this._localClass);
+      this._GUN_BASE = { x: 0.2, y: -0.22, z: -0.35, rx: 0.03, rz: -0.04 };
+      this._gunGroup.position.set(0.2, -0.22, -0.35);
+      this._gunGroup.rotation.set(0.03, 0, -0.04);
+      this.weaponScene.add(this._gunGroup);
+    }
 
     this._muzzleLight = new THREE.PointLight(this._localClassColor, 0, 2);
     this._muzzleLight.position.set(0.2, -0.195, -0.72);
@@ -106,6 +114,13 @@ export class Game {
     this._scopeFovCurrent = 75;
   }
 
+  // ── Late-init AWP (called from main.js once sound is ready) ──────────
+  initAWP(sound) {
+    if (this._localClass !== 'WRAITH') return;
+    this._awpWeapon = new AWPWeapon(this.weaponScene, this.weaponCamera, sound);
+    this._gunGroup  = this._awpWeapon.group;
+  }
+
   _makeMuzzleFlashTexture() {
     const c   = document.createElement('canvas');
     c.width   = c.height = 64;
@@ -121,13 +136,19 @@ export class Game {
 
   // ── Scope in/out ─────────────────────────────────────────────────
   setScoped(scoped) {
-    this._isScoped       = scoped;
-    this._scopeFovTarget = scoped ? 75 / 6 : 75;
+    this._isScoped = scoped;
 
-    if (this._gunGroup) this._gunGroup.visible = !scoped;
-
-    const scopeEl = document.getElementById('scope-overlay');
-    if (scopeEl) scopeEl.style.display = scoped ? 'block' : 'none';
+    if (this._awpWeapon) {
+      // AWP: FOV 75 → 15, scope managed by AWPWeapon itself
+      this._scopeFovTarget = scoped ? 15 : 75;
+      if (scoped) this._awpWeapon.aimIn();
+      else        this._awpWeapon.aimOut();
+    } else {
+      this._scopeFovTarget = scoped ? 75 / 6 : 75;
+      if (this._gunGroup) this._gunGroup.visible = !scoped;
+      const scopeEl = document.getElementById('scope-overlay');
+      if (scopeEl) scopeEl.style.display = scoped ? 'block' : 'none';
+    }
 
     const ch = document.getElementById('crosshair');
     if (ch) ch.style.display = scoped ? 'none' : (this.controls.isPlaying ? 'block' : 'none');
@@ -164,24 +185,30 @@ export class Game {
   }
 
   tickWeapon(dt) {
-    const b = this._GUN_BASE;
-    if (this._recoilElapsed >= 0) {
-      this._recoilElapsed += dt;
-      const t = this._recoilElapsed;
-      if (t < 0.015) {
-        const p = t / 0.015;
-        this._gunGroup.position.z = b.z + 0.05 * p;
-        this._gunGroup.rotation.x = b.rx - 0.08 * p;
-      } else if (t < 0.05) {
-        const p = (t - 0.015) / 0.035;
-        this._gunGroup.position.z = (b.z + 0.05) - 0.05 * p;
-        this._gunGroup.rotation.x = (b.rx - 0.08) + 0.08 * p;
-      } else {
-        this._gunGroup.position.z = b.z;
-        this._gunGroup.rotation.x = b.rx;
-        this._recoilElapsed = -1;
+    // AWP handles its own recoil & bolt internally
+    if (this._awpWeapon) {
+      this._awpWeapon.update(dt);
+    } else {
+      const b = this._GUN_BASE;
+      if (this._recoilElapsed >= 0) {
+        this._recoilElapsed += dt;
+        const t = this._recoilElapsed;
+        if (t < 0.015) {
+          const p = t / 0.015;
+          this._gunGroup.position.z = b.z + 0.05 * p;
+          this._gunGroup.rotation.x = b.rx - 0.08 * p;
+        } else if (t < 0.05) {
+          const p = (t - 0.015) / 0.035;
+          this._gunGroup.position.z = (b.z + 0.05) - 0.05 * p;
+          this._gunGroup.rotation.x = (b.rx - 0.08) + 0.08 * p;
+        } else {
+          this._gunGroup.position.z = b.z;
+          this._gunGroup.rotation.x = b.rx;
+          this._recoilElapsed = -1;
+        }
       }
     }
+
     if (this._weaponFlashTimer > 0) {
       this._weaponFlashTimer -= dt;
       if (this._weaponFlashTimer <= 0) {

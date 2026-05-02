@@ -159,4 +159,61 @@ export class SoundSystem {
       osc.start(st); osc.stop(st + 0.1);
     });
   }
+
+  // ── AWP synthesized sounds ────────────────────────────────────────────
+
+  play(name) {
+    switch (name) {
+      case 'awp_fire':   return this._playAwpFire();
+      case 'awp_reload': return this._playAwpReload();
+      case 'scope_in':   return this._playScopeIn();
+      case 'scope_out':  return this._playScopeOut();
+    }
+  }
+
+  _playAwpFire() {
+    if (!this._c) return;
+    const ctx = this._c, t = ctx.currentTime;
+    // Heavy sawtooth crack — louder and lower than generic sniper
+    this._osc('sawtooth', 140, 35, 0.055, 1.2, t);
+    // Sharp pressure wave: lowpass at 180hz, 80ms
+    this._noiseThru(null, t, 0.08, 1.1, 180, 'lowpass');
+    // Sub boom: sine 60→18hz, 130ms
+    this._osc('sine', 60, 18, 0.13, 0.9, t);
+    // Long resonant tail: bandpass 280hz Q=0.4, 1600ms
+    this._noiseThru(null, t + 0.05, 1.6, 0.35, 280, 'bandpass', 0.4);
+    // High crack overtone: square 800→200hz, 25ms
+    this._osc('square', 800, 200, 0.025, 0.45, t);
+  }
+
+  _playAwpReload() {
+    if (!this._c) return;
+    const ctx = this._c, t = ctx.currentTime;
+    // Phase 1 — bolt lift: metallic click
+    this._noiseThru(null, t,        0.025, 0.55, 900, 'bandpass', 5);
+    this._osc('square', 220, 80, 0.018, 0.3, t);
+    // Phase 1b — bolt pull: slide scrape
+    this._noiseThru(null, t + 0.12, 0.08, 0.35, 400, 'bandpass', 2);
+    // Phase 2 — bolt close: heavy metallic thud
+    this._noiseThru(null, t + 0.32, 0.05, 0.6, 140, 'lowpass');
+    this._osc('sine', 120, 50, 0.04, 0.5, t + 0.32);
+    // Phase 2b — lock click
+    this._noiseThru(null, t + 0.42, 0.022, 0.45, 700, 'bandpass', 4);
+  }
+
+  _playScopeIn() {
+    if (!this._c) return;
+    const ctx = this._c, t = ctx.currentTime;
+    // Short filtered whoosh rising
+    this._noiseThru(null, t, 0.12, 0.28, 1200, 'highpass');
+    this._osc('sine', 320, 620, 0.10, 0.12, t);
+  }
+
+  _playScopeOut() {
+    if (!this._c) return;
+    const ctx = this._c, t = ctx.currentTime;
+    // Short filtered whoosh falling
+    this._noiseThru(null, t, 0.10, 0.22, 900, 'highpass');
+    this._osc('sine', 580, 240, 0.09, 0.10, t);
+  }
 }

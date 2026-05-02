@@ -384,6 +384,92 @@
       left: -1.5px;
       box-shadow: 0 0 4px #00f5ff;
     }
+
+    /* ── AWP ammo HUD ── */
+    #awp-hud {
+      position: fixed;
+      bottom: 28px;
+      right: 28px;
+      display: none;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      pointer-events: none;
+      z-index: 60;
+      font-family: 'Orbitron', 'Courier New', monospace;
+    }
+
+    #awp-label {
+      font-size: 0.46rem;
+      letter-spacing: 0.38em;
+      color: #00f5ff;
+      text-shadow: 0 0 8px #00f5ff;
+      opacity: 0.65;
+    }
+
+    #awp-ammo-row {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+
+    #awp-ammo-current {
+      font-size: 2.2rem;
+      font-weight: 900;
+      color: #00f5ff;
+      text-shadow: 0 0 14px #00f5ff, 0 0 28px rgba(0,245,255,0.4);
+      line-height: 1;
+    }
+
+    #awp-ammo-sep {
+      font-size: 1rem;
+      color: rgba(0,245,255,0.35);
+      font-weight: 300;
+    }
+
+    #awp-ammo-reserve {
+      font-size: 1rem;
+      color: rgba(0,245,255,0.55);
+      font-weight: 400;
+      text-shadow: 0 0 6px rgba(0,245,255,0.3);
+    }
+
+    #awp-reload-bar {
+      display: none;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      width: 140px;
+    }
+
+    #awp-reload-label {
+      font-size: 0.44rem;
+      letter-spacing: 0.28em;
+      color: #00f5ff;
+      text-shadow: 0 0 8px #00f5ff;
+      animation: reloadBlink 0.55s ease-in-out infinite;
+    }
+
+    @keyframes reloadBlink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    #awp-reload-track {
+      width: 100%;
+      height: 3px;
+      background: rgba(0,245,255,0.12);
+      border-radius: 2px;
+    }
+
+    #awp-reload-fill {
+      height: 100%;
+      width: 0%;
+      background: #00f5ff;
+      box-shadow: 0 0 6px #00f5ff;
+      border-radius: 2px;
+      transition: width 0.08s linear;
+    }
   </style>
 </head>
 <body>
@@ -406,6 +492,20 @@
 
   <!-- Crosshair -->
   <div id="crosshair"><div id="crosshair-dot"></div></div>
+
+  <!-- AWP ammo HUD (WRAITH class only — shown via JS) -->
+  <div id="awp-hud">
+    <div id="awp-reload-bar">
+      <div id="awp-reload-label">RELOADING…</div>
+      <div id="awp-reload-track"><div id="awp-reload-fill"></div></div>
+    </div>
+    <div id="awp-ammo-row">
+      <span id="awp-ammo-current">5</span>
+      <span id="awp-ammo-sep">/</span>
+      <span id="awp-ammo-reserve">25</span>
+    </div>
+    <div id="awp-label">AWP</div>
+  </div>
 
   <!-- Scope overlay — visible only when WRAITH aims in -->
   <div id="scope-overlay">

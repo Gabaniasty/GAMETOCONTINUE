@@ -16,6 +16,19 @@ const hud     = new Hud();
 const bullets = new BulletSystem(game.scene);
 const sound   = new SoundSystem();
 
+// ── AWP weapon init (WRAITH class) ──────────────────────────────────
+if (localClass === 'WRAITH') {
+  game.initAWP(sound);
+  // Show AWP ammo HUD
+  const awpHud = document.getElementById('awp-hud');
+  if (awpHud) awpHud.style.display = 'flex';
+  // Seed HUD values immediately
+  const awpCur = document.getElementById('awp-ammo-current');
+  const awpRes = document.getElementById('awp-ammo-reserve');
+  if (awpCur) awpCur.textContent = game._awpWeapon.ammo;
+  if (awpRes) awpRes.textContent = game._awpWeapon.reserve;
+}
+
 hud.setHp(maxHp, maxHp);
 
 // ── Barrel tip positions in weapon-camera local space ───────────────
@@ -31,8 +44,8 @@ network._socket.on('connect', () => {
   network.startSendingPosition(game.camera, game.controls);
 });
 
-// ── Shoot ──────────────────────────────────────────────────────────
-game.controls.onShoot = () => {
+// ── Shared shoot helper (fires raycast + network notify) ─────────────
+function _doFireShot() {
   const origin = {
     x: game.camera.position.x,
     y: game.camera.position.y,
@@ -41,24 +54,45 @@ game.controls.onShoot = () => {
   const dir3      = new THREE.Vector3(0, 0, -1).applyQuaternion(game.camera.quaternion);
   const direction = { x: dir3.x, y: dir3.y, z: dir3.z };
 
-  sound.playGunshot(weaponSound);
-  game.triggerRecoil();
-
-  // Transform barrel tip from weapon-camera local → world space for visual spawn
   const btLocal    = (BARREL_TIP[localClass] || BARREL_TIP.SOLDIER).clone();
   btLocal.applyQuaternion(game.camera.quaternion);
   const barrelWorld = game.camera.position.clone().add(btLocal);
 
-  // Client-side raycast — determines what (if anything) the bullet hits
   const result = bullets.shoot(origin, direction, game.camera, barrelWorld);
-
   if (result.type === 'player') {
-    // A player is hit and no wall was between us — notify server for authoritative damage
     network.sendShoot(origin, direction, result.playerId, result.distance);
   }
-  // type 'wall' → bullet already stopped visually; no damage server notification needed
-  // type 'miss' → bullet travels full range; no server notification needed
-};
+}
+
+// ── Shoot ──────────────────────────────────────────────────────────
+if (localClass === 'WRAITH' && game._awpWeapon) {
+  // AWP: scoped-click fires through AWP (handles rate limit + bolt)
+  game.controls.onAwpShoot = () => {
+    game._awpWeapon.shoot(() => {
+      // This fires only when AWP approves the shot
+      game.triggerRecoil();
+      _doFireShot();
+    });
+  };
+  // Unscoped fallback (hip-fire — not recommended but still possible via onShoot)
+  game.controls.onShoot = () => {
+    game._awpWeapon.shoot(() => {
+      game.triggerRecoil();
+      _doFireShot();
+    });
+  };
+  // Reload on R
+  game.controls.onReload = () => game._awpWeapon.reload();
+  // Hold breath on Shift while scoped (hold-to-steady: cancel on keyup)
+  game.controls.onHoldBreath    = () => game._awpWeapon.startBreath();
+  game.controls.onReleaseBreath = () => game._awpWeapon.releaseBreath();
+} else {
+  game.controls.onShoot = () => {
+    sound.playGunshot(weaponSound);
+    game.triggerRecoil();
+    _doFireShot();
+  };
+}
 
 // ── Combat callbacks ───────────────────────────────────────────────
 
@@ -106,6 +140,15 @@ network.onRespawned = ({ id, x, y, z, hp }) => {
     game.controls._vel.z = 0;
     game.controls.isDead = false;
     game.showSpawnProtection();
+    // Reset AWP ammo on respawn
+    if (game._awpWeapon) {
+      game._awpWeapon.ammo    = game._awpWeapon._maxMag;
+      game._awpWeapon.reserve = 25;
+      game._awpWeapon.isReloading = false;
+      game._awpWeapon._updateAmmoHud();
+      const rl = document.getElementById('awp-reload-bar');
+      if (rl) rl.style.display = 'none';
+    }
   }
 };
 

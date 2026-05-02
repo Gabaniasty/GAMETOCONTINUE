@@ -62,6 +62,13 @@ export class Controls {
     this.onScope   = null;
     this.onUnscope = null;
 
+    // AWP callbacks
+    this.onReload        = null;
+    this.onHoldBreath    = null;
+    this.onReleaseBreath = null;
+    this._breathHeld     = false;
+    this._breathTimeout  = null;
+
     // Round system — controls are blocked during lobby/results
     this.roundActive = false;
 
@@ -329,10 +336,18 @@ export class Controls {
   _bindEvents() {
     document.addEventListener('contextmenu', (e) => e.preventDefault());
 
+    // Separate callback for AWP shoot (bypasses Controls fire-rate gate)
+    this.onAwpShoot = null;
+
     document.addEventListener('mousedown', (e) => {
       if (e.button === 0) {
         if (!this.isPlaying) { this._enter(); return; }
         if (this.isDead) return;
+        // AWP: when scoped, delegate entirely to AWPWeapon (own rate limit + bolt)
+        if (this.isScoped && this._playerClass === 'WRAITH' && this.onAwpShoot) {
+          this.onAwpShoot();
+          return;
+        }
         if (!this._canShoot()) return;
         if (this.onShoot) this.onShoot();
         return;
@@ -365,12 +380,37 @@ export class Controls {
         this._lastMouseY = null;
         return;
       }
+      if (this.isPlaying && !this.isDead) {
+        // R — reload (AWP)
+        if ((e.code === 'KeyR') && this.onReload) {
+          this.onReload();
+        }
+        // Shift while scoped — hold breath (AWP)
+        if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && this.isScoped && this.onHoldBreath) {
+          if (!this._breathHeld) {
+            this._breathHeld = true;
+            this.onHoldBreath();
+            // Auto-release after 3 s to match AWP breath window
+            if (this._breathTimeout) clearTimeout(this._breathTimeout);
+            this._breathTimeout = setTimeout(() => { this._breathHeld = false; }, 3100);
+          }
+        }
+      }
       const GAME_KEYS = ['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight',
                          'Space','ShiftLeft','ShiftRight','KeyC','ControlLeft','ControlRight'];
       if (!this.isPlaying && GAME_KEYS.includes(e.code)) this._enter();
     });
 
-    document.addEventListener('keyup', (e) => { this.keys[e.code] = false; });
+    document.addEventListener('keyup', (e) => {
+      this.keys[e.code] = false;
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+        if (this._breathHeld) {
+          this._breathHeld = false;
+          if (this._breathTimeout) { clearTimeout(this._breathTimeout); this._breathTimeout = null; }
+          if (this.onReleaseBreath) this.onReleaseBreath();
+        }
+      }
+    });
 
     document.addEventListener('pointerlockchange', () => {
       this.isLocked = document.pointerLockElement === this.domElement;
