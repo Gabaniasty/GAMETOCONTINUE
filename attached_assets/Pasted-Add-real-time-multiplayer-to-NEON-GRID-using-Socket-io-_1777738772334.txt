@@ -1,0 +1,61 @@
+Add real-time multiplayer to NEON GRID using Socket.io. Other players should appear and move in the world.
+
+**Server side — create src/game/GameServer.js:**
+
+Create a GameServer class that:
+
+- Maintains a Map() of connected players: { id, x, y, z, rotY, hp, class, username, kills, deaths }
+
+- Runs a game loop at 20 ticks/second (setInterval 50ms) that broadcasts full game state to all players
+
+- Handles these Socket.io events:
+
+  - 'player:join' → { username, class } — adds player to state, spawns at one of 4 spawn points: [(-30,1.6,-30), (30,1.6,-30), (-30,1.6,30), (30,1.6,30)], emits 'game:state' back with all current players
+
+  - 'player:move' → { x, y, z, rotY } — updates that player's position/rotation (basic server-side bounds checking: clamp to map -40 to 40)
+
+  - 'player:shoot' → { origin, direction } — handle in Phase 4, for now just log it
+
+  - 'disconnect' → remove player, broadcast 'player:left' with socket.id
+
+Import and start GameServer in server.js.
+
+**Client side — create public/js/Network.js:**
+
+Create a Network class that:
+
+- Connects to Socket.io server
+
+- On connect: emits 'player:join' with { username: localStorage.getItem('username') || 'Ghost_' + random4digits, class: localStorage.getItem('class') || 'SOLDIER' }
+
+- Every 50ms: emits 'player:move' with current camera position and Y rotation
+
+- Listens to 'game:state' → stores remote players list
+
+- Listens to 'player:left' → removes that player from remote list
+
+**Remote player rendering in Game.js:**
+
+Add a method updateRemotePlayers(players):
+
+- For each remote player, create/update a simple Three.js mesh:
+
+  - Body: BoxGeometry(0.8, 1.6, 0.8), color by class: SOLDIER=0x00f5ff, GHOST=0xff2d78, WRAITH=0x7b2fff, with emissive glow
+
+  - Head: SphereGeometry(0.4), same color
+
+  - Floating username label: use THREE.Sprite with canvas texture showing the player's name in neon text
+
+  - Position the mesh at player's x,y-0.8,z (center of body)
+
+  - Rotate body to match player's rotY
+
+- Remove meshes for players no longer in state
+
+**Wire it together in main.js:**
+
+- Create Network instance
+
+- Each frame: call game.updateRemotePlayers(network.getRemotePlayers())
+
+Test: open two browser tabs to game.html, verify both players can see each other moving.
