@@ -280,8 +280,8 @@ export class Hud {
     mapLbl.style.cssText = 'font-size:.42rem; letter-spacing:.2em; color:rgba(0,245,255,0.3);';
     mapLbl.textContent = 'SECTOR MAP';
     const canvas = this._el.minimap = document.createElement('canvas');
-    canvas.width = 80; canvas.height = 80;
-    canvas.style.cssText = 'display:block; border:1px solid rgba(0,245,255,0.2); background:#010108;';
+    canvas.width = 160; canvas.height = 160;
+    canvas.style.cssText = 'display:block; width:160px; height:160px; border:1px solid rgba(0,245,255,0.2); background:#010108;';
     mapWrap.append(mapLbl, canvas);
 
     wrap.append(ammoWrap, mapWrap);
@@ -742,40 +742,109 @@ export class Hud {
   }
 
   // ── Minimap ───────────────────────────────────────────────────────────
+  // TERMINAL map zone definitions for minimap rendering (100×100 world: -50 to +50)
+  static get _MINIMAP_ZONES() {
+    return [
+      // Open areas (background floor zones)
+      { label: 'MAIN HALL',  fill: 'rgba(123,47,255,0.18)', stroke: 'rgba(123,47,255,0.55)', minX: -21, maxX:  21,   minZ: -12,   maxZ:  12   },
+      { label: 'SERVER',     fill: 'rgba(0,245,255,0.1)',   stroke: 'rgba(0,245,255,0.45)',   minX: -48.5, maxX: -29, minZ: -48.5, maxZ: -26   },
+      { label: 'CTRL HUB',   fill: 'rgba(255,45,120,0.1)', stroke: 'rgba(255,45,120,0.45)',  minX:  29,   maxX:  48.5, minZ: -48.5, maxZ: -26  },
+      { label: 'SIDE ROOM',  fill: 'rgba(0,245,255,0.1)',   stroke: 'rgba(0,245,255,0.45)',   minX: -48.5, maxX: -29, minZ:  26,   maxZ:  48.5 },
+      { label: 'GEN ROOM',   fill: 'rgba(255,102,0,0.12)', stroke: 'rgba(255,102,0,0.5)',    minX:  29,   maxX:  48.5, minZ:  26,   maxZ:  48.5 },
+      // Corridors
+      { label: '',           fill: 'rgba(20,30,50,0.7)',    stroke: 'rgba(0,245,255,0.15)',   minX: -29,   maxX: -21,   minZ: -48.5, maxZ:  48.5 },
+      { label: '',           fill: 'rgba(20,30,50,0.7)',    stroke: 'rgba(0,245,255,0.15)',   minX:  21,   maxX:  29,   minZ: -48.5, maxZ:  48.5 },
+      // Chokepoint
+      { label: 'CHOKE',      fill: 'rgba(255,45,120,0.12)', stroke: 'rgba(255,45,120,0.35)', minX: -4,    maxX:  4,    minZ:  25,   maxZ:  38   },
+      // Catwalk (thin vertical strip)
+      { label: 'CATWALK',    fill: 'rgba(123,47,255,0.25)', stroke: 'rgba(123,47,255,0.7)',   minX: -2,    maxX:  2,    minZ: -30,   maxZ:  30   },
+    ];
+  }
+
   updateMinimap(localPos, remotePlayers) {
     const canvas = this._el.minimap;
-    const ctx    = canvas.getContext('2d');
-    const sz     = 80;
-    const toPixel = (v) => (v + 40) / 80 * sz;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const SZ  = canvas.width;          // 160 px
+    const WORLD = 100;                 // -50 to +50
 
-    ctx.clearRect(0, 0, sz, sz);
+    // Map world coord → canvas pixel
+    const px = (v) => (v + 50) / WORLD * SZ;
+
+    // ── Background ────────────────────────────────────────────────
+    ctx.clearRect(0, 0, SZ, SZ);
     ctx.fillStyle = '#010108';
-    ctx.fillRect(0, 0, sz, sz);
+    ctx.fillRect(0, 0, SZ, SZ);
 
-    ctx.strokeStyle = 'rgba(0,245,255,0.07)';
+    // ── Subtle grid ───────────────────────────────────────────────
+    ctx.strokeStyle = 'rgba(0,245,255,0.05)';
     ctx.lineWidth   = 0.5;
-    for (let i = 0; i <= sz; i += 20) {
-      ctx.beginPath(); ctx.moveTo(i, 0);  ctx.lineTo(i, sz);  ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, i);  ctx.lineTo(sz, i);  ctx.stroke();
+    const step = SZ / 10;   // 10 cells across 100 units
+    for (let i = 0; i <= SZ; i += step) {
+      ctx.beginPath(); ctx.moveTo(i, 0);  ctx.lineTo(i, SZ);  ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, i);  ctx.lineTo(SZ, i);  ctx.stroke();
     }
 
-    const CC = { SOLDIER: '#00f5ff', GHOST: '#ff2d78', WRAITH: '#7b2fff' };
-    remotePlayers.forEach((p) => {
-      if (p.dead) return;
-      ctx.fillStyle = CC[p.class] || '#00f5ff';
-      ctx.beginPath();
-      ctx.arc(toPixel(p.x), toPixel(p.z), 2.5, 0, Math.PI * 2);
-      ctx.fill();
-    });
+    // ── Zone fills & outlines ─────────────────────────────────────
+    const zones = Hud._MINIMAP_ZONES;
+    for (const z of zones) {
+      const x1 = px(z.minX), y1 = px(z.minZ);
+      const w  = px(z.maxX) - x1, h = px(z.maxZ) - y1;
 
+      ctx.fillStyle   = z.fill;
+      ctx.fillRect(x1, y1, w, h);
+      ctx.strokeStyle = z.stroke;
+      ctx.lineWidth   = 0.8;
+      ctx.strokeRect(x1, y1, w, h);
+    }
+
+    // ── Zone labels ───────────────────────────────────────────────
+    ctx.font         = 'bold 6px monospace';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    for (const z of zones) {
+      if (!z.label) continue;
+      const cx = px((z.minX + z.maxX) / 2);
+      const cy = px((z.minZ + z.maxZ) / 2);
+      ctx.fillStyle   = z.stroke;
+      ctx.shadowColor = z.stroke;
+      ctx.shadowBlur  = 4;
+      ctx.fillText(z.label, cx, cy);
+    }
+    ctx.shadowBlur = 0;
+
+    // ── Remote player dots (color-coded by class) ─────────────────
+    const CC = { SOLDIER: '#00f5ff', GHOST: '#ff2d78', WRAITH: '#7b2fff' };
+    if (remotePlayers) {
+      remotePlayers.forEach((p) => {
+        if (p.dead) return;
+        const col = CC[p.class] || '#00f5ff';
+        ctx.fillStyle   = col;
+        ctx.shadowColor = col;
+        ctx.shadowBlur  = 6;
+        ctx.beginPath();
+        ctx.arc(px(p.x), px(p.z), 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+    ctx.shadowBlur = 0;
+
+    // ── Local player dot (bright white with glow) ─────────────────
     if (localPos) {
-      ctx.fillStyle = '#ffffff';
+      const lx = px(localPos.x), lz = px(localPos.z);
+      ctx.fillStyle   = '#ffffff';
       ctx.shadowColor = '#ffffff';
-      ctx.shadowBlur  = 5;
+      ctx.shadowBlur  = 8;
       ctx.beginPath();
-      ctx.arc(toPixel(localPos.x), toPixel(localPos.z), 3, 0, Math.PI * 2);
+      ctx.arc(lx, lz, 4, 0, Math.PI * 2);
       ctx.fill();
-      ctx.shadowBlur = 0;
+      ctx.shadowBlur  = 0;
+      // Cyan outline ring
+      ctx.strokeStyle = '#00f5ff';
+      ctx.lineWidth   = 1;
+      ctx.beginPath();
+      ctx.arc(lx, lz, 5.5, 0, Math.PI * 2);
+      ctx.stroke();
     }
   }
 
