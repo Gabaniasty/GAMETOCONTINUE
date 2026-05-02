@@ -1,5 +1,5 @@
-import { CLASSES }     from './Classes.js';
-import { ARENA_AABBS } from './MapLoader.js';
+import { CLASSES }                              from './Classes.js';
+import { ARENA_AABBS, LADDER_ZONES, CATWALK_EYE_Y, GROUND_EYE_Y } from './MapLoader.js';
 
 // ── Movement constants ────────────────────────────────────────────────────
 const EYE_Y        = 1.65;
@@ -25,6 +25,10 @@ const SPRINT_SWAY    = 0.010;
 // ── Collision constants ────────────────────────────────────────────────────
 const PLAYER_RADIUS = 0.42;  // horizontal body half-width (square footprint)
 const GROUND_MARGIN = 0.55;  // how far above a surface top the feet can be and still land
+
+// ── Ladder teleport constants ─────────────────────────────────────────────
+const LADDER_COOLDOWN   = 0.8;   // seconds between teleports
+const CATWALK_THRESHOLD = 4.0;   // y above which player is considered on catwalk
 
 export class Controls {
   constructor(camera, domElement) {
@@ -55,8 +59,8 @@ export class Controls {
 
     // Scope state (WRAITH only)
     this.isScoped  = false;
-    this.onScope   = null;   // () => void — wired up in main.js
-    this.onUnscope = null;   // () => void
+    this.onScope   = null;
+    this.onUnscope = null;
 
     // Round system — controls are blocked during lobby/results
     this.roundActive = false;
@@ -66,6 +70,9 @@ export class Controls {
 
     this._playerClass  = localStorage.getItem('ng_class') || 'SOLDIER';
     this._lastShotTime = 0;
+
+    // Ladder teleport cooldown
+    this._ladderCooldown = 0;
 
     this._bindEvents();
   }
@@ -85,6 +92,9 @@ export class Controls {
   // ── Main physics update ──────────────────────────────────────────────────
   update(camera, dt) {
     if (!this.isPlaying) return;
+
+    // Tick cooldown
+    if (this._ladderCooldown > 0) this._ladderCooldown -= dt;
 
     // Step 0: crouch lerp
     this._crouching = !!(this.keys['KeyC'] || this.keys['ControlLeft'] || this.keys['ControlRight']);
@@ -152,7 +162,10 @@ export class Controls {
     // Step 6: ground detection (AABB)
     this._onGround = this._doGroundAABB(camera);
 
-    // Step 7: head bob
+    // Step 7: ladder teleport
+    this._doLadderTeleport(camera);
+
+    // Step 8: head bob
     const hspd = Math.sqrt(this._vel.x ** 2 + this._vel.z ** 2);
     if (hspd > 0.5 && this._onGround && !this._crouching && !this.isDead) {
       this._bobTimer += dt * (sprinting ? SPRINT_BOB_SPD : WALK_BOB_SPD);
@@ -166,9 +179,39 @@ export class Controls {
     }
   }
 
+  // ── Ladder teleport ───────────────────────────────────────────────────────
+  _doLadderTeleport(camera) {
+    if (this._ladderCooldown > 0) return;
+    if (!LADDER_ZONES || LADDER_ZONES.length === 0) return;
+
+    const px = camera.position.x;
+    const pz = camera.position.z;
+    const py = camera.position.y;
+
+    for (const zone of LADDER_ZONES) {
+      if (px < zone.minX || px > zone.maxX) continue;
+      if (pz < zone.minZ || pz > zone.maxZ) continue;
+
+      const onCatwalk = py > CATWALK_THRESHOLD;
+
+      if (!onCatwalk && this._onGround) {
+        // Ground level → teleport up to catwalk
+        camera.position.y = CATWALK_EYE_Y;
+        this._vel.y = 0;
+        this._onGround = true;
+        this._ladderCooldown = LADDER_COOLDOWN;
+      } else if (onCatwalk && this._onGround) {
+        // Catwalk level → teleport down to ground
+        camera.position.y = GROUND_EYE_Y;
+        this._vel.y = 0;
+        this._onGround = true;
+        this._ladderCooldown = LADDER_COOLDOWN;
+      }
+      break;
+    }
+  }
+
   // ── Ground check (AABB) ──────────────────────────────────────────────────
-  // Finds the highest AABB top-surface below the player's feet and snaps.
-  // Also uses the flat arena floor at y = 0.
   _doGroundAABB(camera) {
     const px    = camera.position.x;
     const pz    = camera.position.z;
@@ -184,17 +227,14 @@ export class Controls {
 
     // AABB top surfaces
     for (const box of ARENA_AABBS) {
-      // Player XZ footprint must overlap AABB XZ
       if (px + R <= box.minX || px - R >= box.maxX) continue;
       if (pz + R <= box.minZ || pz - R >= box.maxZ) continue;
-      // Feet must be just above (or slightly inside) the top surface
       if (feetY > box.maxY + GROUND_MARGIN) continue;
-      if (feetY < box.maxY - 0.15) continue;  // too far below top — inside the box, skip
+      if (feetY < box.maxY - 0.15) continue;
       groundY = Math.max(groundY, box.maxY);
     }
 
     if (groundY > -Infinity) {
-      // Hard snap + zero downward vel
       const snapY = groundY + this._currentEyeY;
       if (camera.position.y < snapY + 0.01) {
         camera.position.y = snapY;
@@ -203,7 +243,7 @@ export class Controls {
       return camera.position.y <= snapY + 0.02;
     }
 
-    // Prevent falling through the absolute world floor
+    // Prevent falling through absolute world floor
     const absFloor = this._currentEyeY - 0.01;
     if (camera.position.y < absFloor) {
       camera.position.y = absFloor;
@@ -214,9 +254,7 @@ export class Controls {
     return false;
   }
 
-  // ── Wall collision (AABB) ────────────────────────────────────────────────
-  // Expands each AABB by PLAYER_RADIUS and pushes the player out along the
-  // axis of minimum penetration.  Runs twice per frame to resolve corners.
+  // ── Wall collision (AABB) ─────────────────────────────────────────────────
   _doWallsAABB(camera) {
     this._resolveWalls(camera);
     this._resolveWalls(camera);
@@ -228,26 +266,22 @@ export class Controls {
     const headY = camera.position.y + 0.25;
 
     for (const box of ARENA_AABBS) {
-      // Vertical overlap — skip if player is sitting on top of or completely below this box
-      if (feetY >= box.maxY - 0.05) continue;   // standing on top — not a wall
-      if (headY <= box.minY)         continue;   // completely below — shouldn't happen
+      if (feetY >= box.maxY - 0.05) continue;
+      if (headY <= box.minY)         continue;
 
       const px = camera.position.x;
       const pz = camera.position.z;
 
-      // Expanded AABB faces (player treated as axis-aligned square)
       const eMinX = box.minX - R, eMaxX = box.maxX + R;
       const eMinZ = box.minZ - R, eMaxZ = box.maxZ + R;
 
-      // Is player centre inside the expanded box on both axes?
       if (px <= eMinX || px >= eMaxX) continue;
       if (pz <= eMinZ || pz >= eMaxZ) continue;
 
-      // Penetration depth along each face
-      const dL = px - eMinX;   // depth past left face
-      const dR = eMaxX - px;   // depth past right face
-      const dF = pz - eMinZ;   // depth past front face
-      const dB = eMaxZ - pz;   // depth past back face
+      const dL = px - eMinX;
+      const dR = eMaxX - px;
+      const dF = pz - eMinZ;
+      const dB = eMaxZ - pz;
 
       const minPen = Math.min(dL, dR, dF, dB);
 
@@ -267,7 +301,7 @@ export class Controls {
     }
   }
 
-  // ── Overlay helpers ──────────────────────────────────────────────────────
+  // ── Overlay helpers ───────────────────────────────────────────────────────
   _getOverlay()   { return this._overlay   || (this._overlay   = document.getElementById('lock-overlay')); }
   _getCrosshair() { return this._crosshair || (this._crosshair = document.getElementById('crosshair')); }
 
@@ -287,17 +321,15 @@ export class Controls {
   }
 
   _enter() {
-    if (!this.roundActive) return;  // Block pointer lock during lobby / results
+    if (!this.roundActive) return;
     if (!this.isPlaying) this._setPlaying(true);
     this._tryPointerLock();
   }
 
   _bindEvents() {
-    // Prevent right-click context menu in game
     document.addEventListener('contextmenu', (e) => e.preventDefault());
 
     document.addEventListener('mousedown', (e) => {
-      // Left click — shoot or enter game
       if (e.button === 0) {
         if (!this.isPlaying) { this._enter(); return; }
         if (this.isDead) return;
@@ -305,7 +337,6 @@ export class Controls {
         if (this.onShoot) this.onShoot();
         return;
       }
-      // Right click — scope in (WRAITH only)
       if (e.button === 2) {
         if (!this.isPlaying || this.isDead) return;
         if (this._playerClass !== 'WRAITH') return;
@@ -325,7 +356,6 @@ export class Controls {
     document.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
       if (e.code === 'Escape') {
-        // Unscope before exiting
         if (this.isScoped) {
           this.isScoped = false;
           if (this.onUnscope) this.onUnscope();
@@ -356,7 +386,6 @@ export class Controls {
         dx = e.clientX - this._lastMouseX; dy = e.clientY - this._lastMouseY;
         this._lastMouseX = e.clientX; this._lastMouseY = e.clientY;
       }
-      // Divide sensitivity by zoom factor when scoped (6× zoom = 6× slower aim)
       const sens = this.sensitivity * (this.isScoped ? 1 / 6 : 1);
       this.yaw   -= dx * sens;
       this.pitch -= dy * sens;

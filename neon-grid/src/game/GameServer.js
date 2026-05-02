@@ -5,18 +5,24 @@ const { Matchmaker } = require('./Matchmaker');
 
 const SECRET = process.env.JWT_SECRET || 'neon_grid_secret_change_in_prod';
 
+// Team A spawns (north, z=-45) and Team B spawns (south, z=+45)
+// x positions: -20, -10, 0, +10, +20 — matches TerminalMap.js _buildSpawns()
 const SPAWN_POINTS = [
-  { x: -30, y: 1.6, z: -30 },
-  { x:  30, y: 1.6, z: -30 },
-  { x: -30, y: 1.6, z:  30 },
-  { x:  30, y: 1.6, z:  30 },
-  { x:   0, y: 1.6, z: -30 },
-  { x:   0, y: 1.6, z:  30 },
-  { x: -30, y: 1.6, z:   0 },
-  { x:  30, y: 1.6, z:   0 },
+  // Team A — north
+  { x: -20, y: 1.65, z: -45 },
+  { x: -10, y: 1.65, z: -45 },
+  { x:   0, y: 1.65, z: -45 },
+  { x:  10, y: 1.65, z: -45 },
+  { x:  20, y: 1.65, z: -45 },
+  // Team B — south
+  { x: -20, y: 1.65, z:  45 },
+  { x: -10, y: 1.65, z:  45 },
+  { x:   0, y: 1.65, z:  45 },
+  { x:  10, y: 1.65, z:  45 },
+  { x:  20, y: 1.65, z:  45 },
 ];
 
-const BOUNDS        = 40;
+const BOUNDS        = 49;
 const HIT_RADIUS    = 0.7;
 const MAX_PLAYERS   = 10;
 const ROUND_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -27,32 +33,72 @@ const CLASSES = {
   WRAITH:  { hp: 125, speed: 3.5, damage: 95, fireRate: 1333 },
 };
 
-// Arena wall/cover AABBs matching generate-arena.js output
+// TERMINAL map collision AABBs — mirrors TERMINAL_AABBS in public/js/maps/TerminalMap.js
 const ARENA_AABBS = [
-  { minX: -40,   maxX:  40,   minY: 0, maxY: 6, minZ: -40.5, maxZ: -39.5 },
-  { minX: -40,   maxX:  40,   minY: 0, maxY: 6, minZ:  39.5, maxZ:  40.5 },
-  { minX: -40.5, maxX: -39.5, minY: 0, maxY: 6, minZ: -40,   maxZ:  40   },
-  { minX:  39.5, maxX:  40.5, minY: 0, maxY: 6, minZ: -40,   maxZ:  40   },
-  { minX:  -8.5, maxX:  -7.5, minY: 0, maxY: 4, minZ: -25,   maxZ:  25   },
-  { minX:   7.5, maxX:   8.5, minY: 0, maxY: 4, minZ: -25,   maxZ:  25   },
-  { minX: -31,   maxX:  -9,   minY: 0, maxY: 4, minZ: -20.5, maxZ: -19.5 },
-  { minX:   9,   maxX:  31,   minY: 0, maxY: 4, minZ: -20.5, maxZ: -19.5 },
-  { minX: -31,   maxX:  -9,   minY: 0, maxY: 4, minZ:  19.5, maxZ:  20.5 },
-  { minX:   9,   maxX:  31,   minY: 0, maxY: 4, minZ:  19.5, maxZ:  20.5 },
-  { minX: -16.5, maxX: -13.5, minY: 0, maxY: 2, minZ: -16.5, maxZ: -13.5 },
-  { minX:  13.5, maxX:  16.5, minY: 0, maxY: 2, minZ: -16.5, maxZ: -13.5 },
-  { minX: -16.5, maxX: -13.5, minY: 0, maxY: 2, minZ:  13.5, maxZ:  16.5 },
-  { minX:  13.5, maxX:  16.5, minY: 0, maxY: 2, minZ:  13.5, maxZ:  16.5 },
-  { minX:  -1.5, maxX:   1.5, minY: 0, maxY: 2, minZ: -26.5, maxZ: -23.5 },
-  { minX:  -1.5, maxX:   1.5, minY: 0, maxY: 2, minZ:  23.5, maxZ:  26.5 },
-  { minX: -26.5, maxX: -23.5, minY: 0, maxY: 2, minZ:  -1.5, maxZ:   1.5 },
-  { minX:  23.5, maxX:  26.5, minY: 0, maxY: 2, minZ:  -1.5, maxZ:   1.5 },
-  { minX: -36,   maxX: -34,   minY: 0, maxY: 6, minZ: -36,   maxZ: -34   },
-  { minX:  34,   maxX:  36,   minY: 0, maxY: 6, minZ: -36,   maxZ: -34   },
-  { minX: -36,   maxX: -34,   minY: 0, maxY: 6, minZ:  34,   maxZ:  36   },
-  { minX:  34,   maxX:  36,   minY: 0, maxY: 6, minZ:  34,   maxZ:  36   },
-  { minX: -24,   maxX: -16,   minY: 0, maxY: 1, minZ: -24,   maxZ: -16   },
-  { minX:  16,   maxX:  24,   minY: 0, maxY: 1, minZ:  16,   maxZ:  24   },
+  // ── Outer walls (4) ──
+  { minX: -50,    maxX:  50,    minY: 0, maxY: 9, minZ: -50,    maxZ: -48.5  },
+  { minX: -50,    maxX:  50,    minY: 0, maxY: 9, minZ:  48.5,  maxZ:  50    },
+  { minX: -50,    maxX: -48.5,  minY: 0, maxY: 9, minZ: -50,    maxZ:  50    },
+  { minX:  48.5,  maxX:  50,    minY: 0, maxY: 9, minZ: -50,    maxZ:  50    },
+  // ── Corridor A inner east wall ──
+  { minX: -22,    maxX: -21,    minY: 0, maxY: 9, minZ: -48.5,  maxZ: -12    },
+  { minX: -22,    maxX: -21,    minY: 0, maxY: 9, minZ:  12,    maxZ:  48.5  },
+  // ── Corridor B inner west wall ──
+  { minX:  21,    maxX:  22,    minY: 0, maxY: 9, minZ: -48.5,  maxZ: -12    },
+  { minX:  21,    maxX:  22,    minY: 0, maxY: 9, minZ:  12,    maxZ:  48.5  },
+  // ── Server Room (NW) east wall — doorway gap z=-38 to -30 ──
+  { minX: -30,    maxX: -29,    minY: 0, maxY: 9, minZ: -48.5,  maxZ: -38    },
+  { minX: -30,    maxX: -29,    minY: 0, maxY: 9, minZ: -30,    maxZ: -27    },
+  // ── Server Room (NW) south wall — doorway gap x=-33 to -29 ──
+  { minX: -48.5,  maxX: -33,    minY: 0, maxY: 9, minZ: -27,    maxZ: -26    },
+  // ── Control Hub (NE) west wall — doorway gap z=-38 to -30 ──
+  { minX:  29,    maxX:  30,    minY: 0, maxY: 9, minZ: -48.5,  maxZ: -38    },
+  { minX:  29,    maxX:  30,    minY: 0, maxY: 9, minZ: -30,    maxZ: -27    },
+  // ── Control Hub (NE) south wall — doorway gap x=+29 to +33 ──
+  { minX:  33,    maxX:  48.5,  minY: 0, maxY: 9, minZ: -27,    maxZ: -26    },
+  // ── Side Room (SW) east wall — doorway gap z=+30 to +38 ──
+  { minX: -30,    maxX: -29,    minY: 0, maxY: 9, minZ:  27,    maxZ:  30    },
+  { minX: -30,    maxX: -29,    minY: 0, maxY: 9, minZ:  38,    maxZ:  48.5  },
+  // ── Side Room (SW) north wall — doorway gap x=-33 to -29 ──
+  { minX: -48.5,  maxX: -33,    minY: 0, maxY: 9, minZ:  26,    maxZ:  27    },
+  // ── Generator Room (SE) west wall — doorway gap z=+30 to +38 ──
+  { minX:  29,    maxX:  30,    minY: 0, maxY: 9, minZ:  27,    maxZ:  30    },
+  { minX:  29,    maxX:  30,    minY: 0, maxY: 9, minZ:  38,    maxZ:  48.5  },
+  // ── Generator Room (SE) north wall — doorway gap x=+29 to +33 ──
+  { minX:  33,    maxX:  48.5,  minY: 0, maxY: 9, minZ:  26,    maxZ:  27    },
+  // ── Side room generator box ──
+  { minX: -40,    maxX: -36,    minY: 0, maxY: 3, minZ:  36.5,  maxZ:  39.5  },
+  // ── Control Hub console ──
+  { minX:  37,    maxX:  41,    minY: 0, maxY: 1.1, minZ: -43,  maxZ: -37    },
+  // ── Main Hall columns (square approximation) ──
+  { minX: -9.6,   maxX: -8.4,   minY: 0, maxY: 7.5, minZ: -6.6, maxZ: -5.4  },
+  { minX:  8.4,   maxX:  9.6,   minY: 0, maxY: 7.5, minZ: -6.6, maxZ: -5.4  },
+  { minX: -9.6,   maxX: -8.4,   minY: 0, maxY: 7.5, minZ:  5.4, maxZ:  6.6  },
+  { minX:  8.4,   maxX:  9.6,   minY: 0, maxY: 7.5, minZ:  5.4, maxZ:  6.6  },
+  // ── Server racks (NW room) — 6 racks, two rows of 3 ──
+  { minX: -47.6,  maxX: -46.9,  minY: 0, maxY: 3, minZ: -45.9,  maxZ: -44.1  },
+  { minX: -47.6,  maxX: -46.9,  minY: 0, maxY: 3, minZ: -40.9,  maxZ: -39.1  },
+  { minX: -47.6,  maxX: -46.9,  minY: 0, maxY: 3, minZ: -35.9,  maxZ: -34.1  },
+  { minX: -44.4,  maxX: -43.6,  minY: 0, maxY: 3, minZ: -45.9,  maxZ: -44.1  },
+  { minX: -44.4,  maxX: -43.6,  minY: 0, maxY: 3, minZ: -40.9,  maxZ: -39.1  },
+  { minX: -44.4,  maxX: -43.6,  minY: 0, maxY: 3, minZ: -35.9,  maxZ: -34.1  },
+  // ── Corridor cover boxes ──
+  { minX: -26,    maxX: -24,    minY: 0, maxY: 1.5, minZ: -12,   maxZ: -10    },
+  { minX: -26,    maxX: -24,    minY: 0, maxY: 1.5, minZ:  10,   maxZ:  12    },
+  { minX:  24,    maxX:  26,    minY: 0, maxY: 1.5, minZ: -12,   maxZ: -10    },
+  { minX:  24,    maxX:  26,    minY: 0, maxY: 1.5, minZ:  10,   maxZ:  12    },
+  // ── Chokepoint walls (z=+25 to +38, stops before spawn zone) ──
+  { minX: -4,     maxX: -3,     minY: 0, maxY: 9, minZ:  25,    maxZ:  38    },
+  { minX:  3,     maxX:  4,     minY: 0, maxY: 9, minZ:  25,    maxZ:  38    },
+  // ── Chokepoint barricades ──
+  { minX: -2.75,  maxX: -0.25,  minY: 0, maxY: 1.8, minZ: 28.5, maxZ: 29.5  },
+  { minX:  0.25,  maxX:  2.75,  minY: 0, maxY: 1.8, minZ: 34.5, maxZ: 35.5  },
+  // ── Corridor A outer west wall — mid-map z=-27 to +27 ──
+  { minX: -30,    maxX: -29,    minY: 0, maxY: 9, minZ: -27,    maxZ:  27    },
+  // ── Corridor B outer east wall — mid-map z=-27 to +27 ──
+  { minX:  29,    maxX:  30,    minY: 0, maxY: 9, minZ: -27,    maxZ:  27    },
+  // ── Catwalk (maxY=5.8 = grate mesh top, CATWALK_EYE_Y=7.45, feet=5.8) ──
+  { minX: -2,     maxX:  2,     minY: 5.2, maxY: 5.8, minZ: -30, maxZ:  30   },
 ];
 
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }

@@ -21,13 +21,11 @@ export class Game {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
     this.renderer.autoClear         = false;
-    // Ensure the canvas is NEVER black — sky blue is always the fallback
-    this.renderer.setClearColor(0x4a9fcc, 1);
+    this.renderer.setClearColor(0x050d14, 1);
 
     // ── Main scene & camera ───────────────────────────────────────
     this.scene  = new THREE.Scene();
-    // Start with sky blue immediately — MapLoader will refine lighting/fog
-    this.scene.background = new THREE.Color(0x4a9fcc);
+    this.scene.background = new THREE.Color(0x050d14);
 
     this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 200);
     this.camera.position.set(0, 1.65, 0);
@@ -53,6 +51,7 @@ export class Game {
     // ── Map state ─────────────────────────────────────────────────
     this.mapReady         = false;
     this.collidableMeshes = [];
+    this._mapLoader       = null;
 
     this._buildWeaponScene();
     window.addEventListener('resize', () => this._onResize());
@@ -61,6 +60,7 @@ export class Game {
   // ── Map loading ───────────────────────────────────────────────────
   loadMap(path, onReady) {
     const loader = new MapLoader(this.scene);
+    this._mapLoader = loader;
     loader.load(path, (map) => {
       this.collidableMeshes = map.getCollidableMeshes();
       this.mapReady         = true;
@@ -100,7 +100,6 @@ export class Game {
     this._recoilElapsed    = -1;
     this._weaponFlashTimer = 0;
 
-    // ── Scope state ───────────────────────────────────────────────
     this._isScoped        = false;
     this._scopeFovTarget  = 75;
     this._scopeFovCurrent = 75;
@@ -122,21 +121,17 @@ export class Game {
   // ── Scope in/out ─────────────────────────────────────────────────
   setScoped(scoped) {
     this._isScoped       = scoped;
-    this._scopeFovTarget = scoped ? 75 / 6 : 75;   // 6× magnification → ~12.5° FOV
+    this._scopeFovTarget = scoped ? 75 / 6 : 75;
 
-    // Hide weapon viewmodel when looking through scope
     if (this._gunGroup) this._gunGroup.visible = !scoped;
 
-    // Show / hide the scope overlay DOM element
     const scopeEl = document.getElementById('scope-overlay');
     if (scopeEl) scopeEl.style.display = scoped ? 'block' : 'none';
 
-    // Swap HUD crosshair: scope has its own reticle
     const ch = document.getElementById('crosshair');
     if (ch) ch.style.display = scoped ? 'none' : (this.controls.isPlaying ? 'block' : 'none');
   }
 
-  // ── FOV lerp — call every frame ───────────────────────────────────
   tickScope(dt) {
     const diff = this._scopeFovTarget - this._scopeFovCurrent;
     if (Math.abs(diff) < 0.05) {
@@ -155,15 +150,13 @@ export class Game {
     this._weaponFlashTimer = 0.06;
 
     if (this._isScoped) {
-      // Scoped: animate reticle kick instead of weapon model
       const reticle = document.getElementById('scope-reticle');
       if (reticle) {
         reticle.classList.remove('scope-kick');
-        void reticle.offsetWidth;   // force reflow to restart animation
+        void reticle.offsetWidth;
         reticle.classList.add('scope-kick');
       }
     } else {
-      // Unscoped: show muzzle flash on weapon viewmodel
       this._muzzleFlashSprite.visible = true;
       this._muzzleLight.intensity     = 8;
     }
@@ -335,9 +328,9 @@ export class Game {
     }
   }
 
-  // ── Safety arena bounds (outer clamp only) ────────────────────────
+  // ── Safety arena bounds (outer clamp) ─────────────────────────────
   _clampToWalls(pos) {
-    const HALF = 39.4, R = 0.4;
+    const HALF = 49.0, R = 0.4;
     pos.x = Math.max(-HALF + R, Math.min(HALF - R, pos.x));
     pos.z = Math.max(-HALF + R, Math.min(HALF - R, pos.z));
   }
@@ -365,6 +358,10 @@ export class Game {
     controls.applyToCamera();
     this._tickVfx(dt);
     this.tickWeapon(dt);
+    this.tickScope(dt);
+
+    // Per-frame map animation (turbine, flickering lights)
+    if (this._mapLoader) this._mapLoader.update(dt);
 
     this.renderer.clear();
     this.renderer.render(this.scene, camera);
