@@ -268,16 +268,25 @@ export class Game {
     return group;
   }
 
-  updateRemotePlayers(players) {
+  updateRemotePlayers(players, dt = 0.016) {
     const seen = new Set();
     players.forEach((p) => {
       seen.add(p.id);
       let g = this._remoteMeshes.get(p.id);
-      if (!g) { g = this._createRemoteMesh(p); this._remoteMeshes.set(p.id, g); }
-      // Root at feet level — camera/eye is 1.6 above feet
-      g.position.set(p.x, p.y - 1.6, p.z);
-      g.rotation.y = p.rotY;
-      g.visible    = !p.dead;
+      if (!g) {
+        g = this._createRemoteMesh(p);
+        // Snap to initial position on first creation
+        g.position.set(p.x, p.y - 1.6, p.z);
+        this._remoteMeshes.set(p.id, g);
+      }
+      // Lerp toward server position at ~10 units/s
+      const tx = p.x, ty = p.y - 1.6, tz = p.z;
+      const k  = Math.min(1, 10 * dt);
+      g.position.x += (tx - g.position.x) * k;
+      g.position.y += (ty - g.position.y) * k;
+      g.position.z += (tz - g.position.z) * k;
+      g.rotation.y  = p.rotY;
+      g.visible     = !p.dead;
     });
     this._remoteMeshes.forEach((g, id) => {
       if (!seen.has(id)) { this.scene.remove(g); this._remoteMeshes.delete(id); }

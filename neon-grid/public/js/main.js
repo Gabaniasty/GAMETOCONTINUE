@@ -3,14 +3,19 @@ import { Network }      from './Network.js';
 import { Hud }          from './Hud.js';
 import { BulletSystem } from './BulletSystem.js';
 import { SoundSystem }  from './SoundSystem.js';
+import { CLASSES }      from './Classes.js';
 
-console.log('NEON GRID client loaded');
+const localClass = localStorage.getItem('ng_class') || 'SOLDIER';
+const maxHp      = (CLASSES[localClass] || CLASSES.SOLDIER).hp;
 
 const game    = new Game('gameCanvas');
 const network = new Network();
 const hud     = new Hud();
 const bullets = new BulletSystem(game.scene);
 const sound   = new SoundSystem();
+
+// Set initial HP bar to class max
+hud.setHp(maxHp, maxHp);
 
 // ── Start sending position on connect ──────────────────────────
 network._socket.on('connect', () => {
@@ -27,17 +32,14 @@ game.controls.onShoot = () => {
   const dir3 = new THREE.Vector3(0, 0, -1).applyQuaternion(game.camera.quaternion);
   const direction = { x: dir3.x, y: dir3.y, z: dir3.z };
 
-  // Immediate client-side feedback
   sound.playGunshot();
-  game.triggerRecoil();              // weapon scene muzzle flash handled here
+  game.triggerRecoil();
   bullets.spawnBullet(origin, direction, game.camera);
-
   network.sendShoot(origin, direction);
 };
 
-// ── Combat network callbacks ────────────────────────────────────
+// ── Combat callbacks ────────────────────────────────────────────
 
-// Our bullet hit someone
 network.onHit = ({ targetId, damage, newHp }) => {
   hud.flashHit();
   sound.playHitConfirm();
@@ -49,13 +51,11 @@ network.onHit = ({ targetId, damage, newHp }) => {
   }
 };
 
-// We were hit
 network.onDamaged = ({ shooterId, damage, newHp }) => {
-  hud.setHp(newHp);
+  hud.setHp(newHp, maxHp);
   sound.playTakeDamage();
 };
 
-// A kill happened
 network.onKilled = ({ killerId, killerName, victimId, victimName }) => {
   hud.showKill(killerName, victimName);
   const localId = network.getLocalId();
@@ -68,17 +68,32 @@ network.onKilled = ({ killerId, killerName, victimId, victimName }) => {
   }
 };
 
-// A player respawned
 network.onRespawned = ({ id, x, y, z, hp }) => {
   const localId = network.getLocalId();
   if (id === localId) {
     hud.hideDeathScreen();
-    hud.setHp(hp);
+    hud.setHp(hp, maxHp);
     game.camera.position.set(x, y, z);
     game.yVelocity = 0;
     game.onGround  = true;
   }
 };
+
+// XP updates from server after each kill
+network.onXpUpdate = ({ xp, level }) => {
+  hud.setXp(xp, level);
+};
+
+// ── Tab: scoreboard ─────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Tab') {
+    e.preventDefault();
+    hud.showScoreboard(network.getRemotePlayers());
+  }
+});
+document.addEventListener('keyup', (e) => {
+  if (e.code === 'Tab') hud.hideScoreboard();
+});
 
 // ── Patched game loop ───────────────────────────────────────────
 game._animate = function () {
@@ -98,8 +113,8 @@ game._animate = function () {
     game.onGround  = false;
   }
   if (!game.onGround) {
-    game.yVelocity     += game.GRAVITY * dt;
-    camera.position.y  += game.yVelocity * dt;
+    game.yVelocity    += game.GRAVITY * dt;
+    camera.position.y += game.yVelocity * dt;
     if (camera.position.y <= game.FLOOR_Y) {
       camera.position.y = game.FLOOR_Y;
       game.yVelocity    = 0;
@@ -108,10 +123,14 @@ game._animate = function () {
   }
 
   controls.applyToCamera();
-  game.updateRemotePlayers(network.getRemotePlayers());
+  game.updateRemotePlayers(network.getRemotePlayers(), dt);
   game._tickVfx(dt);
   game.tickWeapon(dt);
   bullets.update(dt);
+
+  // HUD updates
+  hud.tickFps(dt);
+  hud.updateMinimap(camera.position, network.getRemotePlayers());
 
   game.renderer.clear();
   game.renderer.render(game.scene, camera);

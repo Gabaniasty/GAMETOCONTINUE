@@ -12,6 +12,7 @@ export class Network {
     this.onDamaged    = null; // { shooterId, damage, newHp }
     this.onKilled     = null; // { killerId, killerName, victimId, victimName }
     this.onRespawned  = null; // { id, x, y, z, hp }
+    this.onXpUpdate   = null; // { xp, level }
 
     const storedName  = localStorage.getItem('ng_username');
     const storedClass = localStorage.getItem('ng_class');
@@ -62,6 +63,10 @@ export class Network {
         }
       }
       if (this.onRespawned) this.onRespawned(data);
+    });
+
+    this._socket.on('player:xp_update', (data) => {
+      if (this.onXpUpdate) this.onXpUpdate(data);
     });
 
     this._socket.on('disconnect', () => {

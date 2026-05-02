@@ -120,8 +120,12 @@ class GameServer {
             });
 
             // Persist stats to DB for authenticated players
-            if (shooter.userId) db.updateStats(shooter.userId, 1, 0, 100);
-            if (target.userId)  db.updateStats(target.userId,  0, 1, 0);
+            if (shooter.userId) {
+              db.updateStats(shooter.userId, 1, 0, 100);
+              const newStats = db.getStats(shooter.userId);
+              if (newStats) socket.emit('player:xp_update', { xp: newStats.xp, level: newStats.level });
+            }
+            if (target.userId) db.updateStats(target.userId, 0, 1, 0);
 
             setTimeout(() => {
               if (!this.players.has(tid)) return;

@@ -25,6 +25,33 @@
       <div class="landing__actions">
         <button id="play-btn" class="btn">PLAY NOW</button>
         <button id="auth-btn" class="btn btn-secondary">LOGIN / REGISTER</button>
+        <a href="/leaderboard.html" class="btn btn-accent" style="font-size:.7rem;">LEADERBOARD</a>
+      </div>
+
+      <!-- Stats card — visible when logged in -->
+      <div id="stats-card" style="display:none" class="neon-card stats-card">
+        <div class="stats-card__row">
+          <div class="stats-card__item">
+            <span class="stats-card__label">LEVEL</span>
+            <span class="stats-card__value" id="sc-level">—</span>
+          </div>
+          <div class="stats-card__item">
+            <span class="stats-card__label">XP</span>
+            <span class="stats-card__value" id="sc-xp">—</span>
+          </div>
+          <div class="stats-card__item">
+            <span class="stats-card__label">KILLS</span>
+            <span class="stats-card__value" id="sc-kills">—</span>
+          </div>
+          <div class="stats-card__item">
+            <span class="stats-card__label">K/D</span>
+            <span class="stats-card__value" id="sc-kd">—</span>
+          </div>
+          <div class="stats-card__item">
+            <span class="stats-card__label">RANK</span>
+            <span class="stats-card__value stats-card__value--accent" id="sc-rank">—</span>
+          </div>
+        </div>
       </div>
     </main>
 
@@ -44,25 +71,53 @@
     const badgeName = document.getElementById('user-badge-name');
     const logoutBtn = document.getElementById('logout-btn');
 
+    const statsCard = document.getElementById('stats-card');
+
+    async function loadStats() {
+      const token = auth.getToken ? auth.getToken() : localStorage.getItem('ng_token');
+      if (!token) return;
+      try {
+        const res = await fetch('/api/stats/me', {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!res.ok) return;
+        const { stats, rank } = await res.json();
+        document.getElementById('sc-level').textContent = stats.level;
+        document.getElementById('sc-xp').textContent    = stats.xp.toLocaleString();
+        document.getElementById('sc-kills').textContent = stats.kills;
+        const kd = (stats.kills / Math.max(stats.deaths, 1)).toFixed(2);
+        document.getElementById('sc-kd').textContent   = kd;
+        document.getElementById('sc-rank').textContent = rank ? `#${rank}` : '—';
+        statsCard.style.display = 'block';
+      } catch (_) {}
+    }
+
     function updateUI() {
       if (auth.isLoggedIn()) {
         badge.style.display    = 'flex';
         badgeName.textContent  = auth.getUsername();
         authBtn.style.display  = 'none';
+        loadStats();
       } else {
         badge.style.display    = 'none';
         authBtn.style.display  = '';
+        statsCard.style.display = 'none';
       }
     }
 
     updateUI();
 
+    function navigate(url) {
+      document.body.classList.add('page-exit');
+      setTimeout(() => { window.location.href = url; }, 280);
+    }
+
     playBtn.addEventListener('click', () => {
       if (auth.isLoggedIn()) {
-        window.location.href = '/class-select.html';
+        navigate('/class-select.html');
       } else {
         auth.showModal((username) => {
-          window.location.href = '/class-select.html';
+          navigate('/class-select.html');
         });
       }
     });
@@ -71,7 +126,10 @@
       auth.showModal((username) => updateUI());
     });
 
-    logoutBtn.addEventListener('click', () => auth.logout());
+    logoutBtn.addEventListener('click', () => {
+      auth.logout();
+      statsCard.style.display = 'none';
+    });
   </script>
 
   <style>
@@ -140,6 +198,36 @@
     .landing__actions {
       display: flex; flex-direction: column; align-items: center;
       gap: 1rem; margin-top: 1rem;
+    }
+
+    .stats-card {
+      margin-top: 0.25rem;
+      min-width: 340px;
+    }
+
+    .stats-card__row {
+      display: flex;
+      gap: 1.5rem;
+      justify-content: center;
+    }
+
+    .stats-card__item {
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+    }
+
+    .stats-card__label {
+      font-size: 0.42rem; letter-spacing: 0.22em;
+      color: rgba(224,224,255,0.35);
+    }
+
+    .stats-card__value {
+      font-size: 0.8rem; font-weight: 700; letter-spacing: 0.1em;
+      color: #e0e0ff;
+    }
+
+    .stats-card__value--accent {
+      color: #7b2fff;
+      text-shadow: 0 0 8px #7b2fff;
     }
 
     .landing__actions .btn { min-width: 220px; text-align: center; }

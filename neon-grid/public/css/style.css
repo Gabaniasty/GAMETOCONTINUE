@@ -81,6 +81,82 @@ html, body {
   color: #fff;
 }
 
+/* ── Button colour variants ── */
+.btn-cyan {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.btn-cyan:hover {
+  background: var(--primary);
+  color: #0a0a0f;
+  box-shadow: 0 0 14px #00f5ff, 0 0 28px rgba(0,245,255,0.45);
+}
+
+.btn-pink {
+  border-color: var(--secondary);
+  color: var(--secondary);
+}
+.btn-pink:hover {
+  background: var(--secondary);
+  color: #0a0a0f;
+  box-shadow: 0 0 14px #ff2d78, 0 0 28px rgba(255,45,120,0.45);
+}
+
+.btn-purple {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn-purple:hover {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 14px #7b2fff, 0 0 28px rgba(123,47,255,0.45);
+}
+
+/* ── Neon input fields ── */
+input.neon-input, textarea.neon-input {
+  background: #0d0d1a;
+  border: 1px solid rgba(0,245,255,0.25);
+  color: #e0e0ff;
+  caret-color: #00f5ff;
+  font-family: 'Orbitron', sans-serif;
+  padding: 0.6rem 0.9rem;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+input.neon-input::placeholder, textarea.neon-input::placeholder {
+  color: #404060;
+}
+input.neon-input:focus, textarea.neon-input:focus {
+  border-color: #00f5ff;
+  box-shadow: 0 0 10px rgba(0,245,255,0.35);
+}
+
+/* ── Glass-morphism card ── */
+.neon-card {
+  background: rgba(13,13,34,0.85);
+  border: 1px solid rgba(0,245,255,0.18);
+  backdrop-filter: blur(10px);
+  border-radius: 4px;
+  padding: 1.25rem 1.5rem;
+}
+
+/* ── Animated neon title ── */
+.title-glow {
+  animation: title-pulse 3s ease-in-out infinite;
+}
+@keyframes title-pulse {
+  0%,100% { text-shadow: 0 0 8px #00f5ff,  0 0 16px #00f5ff; }
+  50%     { text-shadow: 0 0 18px #00f5ff, 0 0 36px #00f5ff, 0 0 54px rgba(0,245,255,0.4); }
+}
+
+/* ── Page transition ── */
+.page-exit {
+  animation: page-exit-anim 0.28s ease-out forwards;
+}
+@keyframes page-exit-anim {
+  to { opacity: 0; transform: scale(1.015); }
+}
+
 /* ── Scanline overlay ── */
 body::after {
   content: '';

@@ -7,7 +7,7 @@ export class Controls {
 
     this.yaw   = 0;
     this.pitch = 0;
-    this.sensitivity = 0.002;
+    this.sensitivity = parseFloat(localStorage.getItem('ng_sensitivity') || '0.002');
 
     this.keys      = {};
     this.isLocked  = false;
@@ -73,7 +73,6 @@ export class Controls {
         return; // first click enters play mode, doesn't shoot
       }
       if (!this._canShoot()) return;
-      console.log('SHOOT');
       if (this.onShoot) this.onShoot();
     });
 

@@ -3,8 +3,9 @@ const http     = require('http');
 const { Server } = require('socket.io');
 const cors     = require('cors');
 const path     = require('path');
-const { GameServer }       = require('./src/game/GameServer');
-const { router: AuthRouter } = require('./src/auth/AuthRouter');
+const { GameServer }                         = require('./src/game/GameServer');
+const { router: AuthRouter, verifyToken }    = require('./src/auth/AuthRouter');
+const db                                     = require('./src/db/Database');
 
 const app    = express();
 const server = http.createServer(app);
@@ -19,6 +20,20 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/auth', AuthRouter);
+
+// ── Public leaderboard ────────────────────────────────────────────
+app.get('/api/leaderboard', (req, res) => {
+  try { res.json(db.getLeaderboard()); }
+  catch (e) { res.status(500).json({ error: 'DB error' }); }
+});
+
+// ── Authenticated player stats + rank ─────────────────────────────
+app.get('/api/stats/me', verifyToken, (req, res) => {
+  const stats = db.getStats(req.user.userId);
+  const rank  = db.getUserRank(req.user.userId);
+  if (!stats) return res.status(404).json({ error: 'Stats not found' });
+  res.json({ stats, rank });
+});
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', players: io.engine.clientsCount });

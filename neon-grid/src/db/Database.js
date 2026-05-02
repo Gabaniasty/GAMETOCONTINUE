@@ -68,4 +68,24 @@ function updateStats(userId, killsDelta, deathsDelta, xpDelta) {
   stmts.updateStats.run(killsDelta, deathsDelta, xpDelta, xpDelta, userId);
 }
 
-module.exports = { createUser, getUserByUsername, getUserById, getStats, updateStats };
+const leaderboardStmt = db.prepare(`
+  SELECT u.username, s.xp, s.level, s.kills, s.deaths,
+         ROUND(CAST(s.kills AS REAL) / MAX(s.deaths, 1), 2) AS kd_ratio
+  FROM stats s JOIN users u ON s.user_id = u.id
+  ORDER BY s.xp DESC
+  LIMIT 20
+`);
+
+const userRankStmt = db.prepare(
+  'SELECT COUNT(*) + 1 AS rank FROM stats WHERE xp > (SELECT xp FROM stats WHERE user_id = ?)'
+);
+
+function getLeaderboard() {
+  return leaderboardStmt.all().map((r, i) => ({ ...r, rank: i + 1 }));
+}
+
+function getUserRank(userId) {
+  return (userRankStmt.get(userId) || {}).rank || null;
+}
+
+module.exports = { createUser, getUserByUsername, getUserById, getStats, updateStats, getLeaderboard, getUserRank };
