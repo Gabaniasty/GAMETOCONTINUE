@@ -35,8 +35,16 @@ game.controls.onShoot = () => {
 
   sound.playGunshot(weaponSound);
   game.triggerRecoil();
-  bullets.spawnBullet(origin, direction, game.camera);
-  network.sendShoot(origin, direction);
+
+  // Client-side raycast — determines what (if anything) the bullet hits
+  const result = bullets.shoot(origin, direction, game.camera);
+
+  if (result.type === 'player') {
+    // A player is hit and no wall was between us — notify server for authoritative damage
+    network.sendShoot(origin, direction, result.playerId, result.distance);
+  }
+  // type 'wall' → bullet already stopped visually; no damage server notification needed
+  // type 'miss' → bullet travels full range; no server notification needed
 };
 
 // ── Combat callbacks ───────────────────────────────────────────────
@@ -80,7 +88,6 @@ network.onRespawned = ({ id, x, y, z, hp }) => {
     hud.hideDeathScreen();
     hud.setHp(hp, maxHp);
     game.camera.position.set(x, y, z);
-    // Zero out velocity so player doesn't fly off at respawn
     game.controls._vel.x = 0;
     game.controls._vel.y = 0;
     game.controls._vel.z = 0;
@@ -95,10 +102,7 @@ network.onXpUpdate = ({ xp, level }) => {
 
 // ── Tab: scoreboard ────────────────────────────────────────────────
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'Tab') {
-    e.preventDefault();
-    hud.showScoreboard(network.getRemotePlayers());
-  }
+  if (e.code === 'Tab') { e.preventDefault(); hud.showScoreboard(network.getRemotePlayers()); }
 });
 document.addEventListener('keyup', (e) => {
   if (e.code === 'Tab') hud.hideScoreboard();
@@ -111,18 +115,16 @@ game._animate = function () {
   const dt = Math.min(game._clock.getDelta(), 0.05);
   const { controls, camera } = game;
 
-  // Velocity-based movement (includes gravity, jump, crouch, head bob)
   controls.update(camera, dt);
   game._clampToWalls(camera.position);
   controls.applyToCamera();
 
-  // Spawn protection shield tracks camera
   game.tickSpawnShield(camera);
-
   game.updateRemotePlayers(network.getRemotePlayers(), dt);
   game._tickVfx(dt);
   game.tickWeapon(dt);
   bullets.update(dt);
+  bullets.updatePlayerHitboxes(network.getRemotePlayers());
 
   hud.tickFps(dt);
   hud.updateMinimap(camera.position, network.getRemotePlayers());
@@ -132,4 +134,15 @@ game._animate = function () {
   game.renderWeapon();
 };
 
-game.start();
+// ── Load map, then start game loop ─────────────────────────────────
+const loadingText = document.getElementById('loadingText');
+if (loadingText) loadingText.textContent = 'LOADING MAP...';
+
+game.loadMap('/assets/maps/arena.glb', (map) => {
+  // Wire up collidable meshes for movement + bullet collision
+  game.controls.setCollidableMeshes(map.getCollidableMeshes());
+  bullets.setCollidableMeshes(map.getCollidableMeshes());
+
+  // Start the game loop only after the map is fully loaded
+  game.start();
+});

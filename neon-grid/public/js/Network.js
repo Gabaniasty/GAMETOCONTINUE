@@ -8,11 +8,11 @@ export class Network {
     this._playerClass = 'SOLDIER';
 
     // Combat callbacks — set by main.js
-    this.onHit        = null; // { targetId, damage, newHp }
-    this.onDamaged    = null; // { shooterId, damage, newHp }
-    this.onKilled     = null; // { killerId, killerName, victimId, victimName }
-    this.onRespawned  = null; // { id, x, y, z, hp }
-    this.onXpUpdate   = null; // { xp, level }
+    this.onHit        = null;
+    this.onDamaged    = null;
+    this.onKilled     = null;
+    this.onRespawned  = null;
+    this.onXpUpdate   = null;
 
     const storedName  = localStorage.getItem('ng_username');
     const storedClass = localStorage.getItem('ng_class');
@@ -41,7 +41,6 @@ export class Network {
       this._remotePlayers.delete(id);
     });
 
-    // ── Combat events ────────────────────────────────────────────
     this._socket.on('player:hit', (data) => {
       if (this.onHit) this.onHit(data);
     });
@@ -55,13 +54,9 @@ export class Network {
     });
 
     this._socket.on('player:respawned', (data) => {
-      // Update remote player position if it's someone else
       if (data.id !== this._localId) {
         const p = this._remotePlayers.get(data.id);
-        if (p) {
-          p.x = data.x; p.y = data.y; p.z = data.z;
-          p.hp = data.hp; p.dead = false;
-        }
+        if (p) { p.x = data.x; p.y = data.y; p.z = data.z; p.hp = data.hp; p.dead = false; }
       }
       if (this.onRespawned) this.onRespawned(data);
     });
@@ -88,8 +83,11 @@ export class Network {
     }, 50);
   }
 
-  sendShoot(origin, direction) {
-    this._socket.emit('player:shoot', { origin, direction, weaponClass: this._playerClass });
+  // targetId and distance are optional — only provided when a player is hit
+  sendShoot(origin, direction, targetId = null, distance = 0) {
+    const payload = { origin, direction, weaponClass: this._playerClass };
+    if (targetId) { payload.targetId = targetId; payload.distance = distance; }
+    this._socket.emit('player:shoot', payload);
   }
 
   getLocalId()       { return this._localId; }

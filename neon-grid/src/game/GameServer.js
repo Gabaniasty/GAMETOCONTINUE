@@ -8,9 +8,13 @@ const SPAWN_POINTS = [
   { x:  30, y: 1.6, z: -30 },
   { x: -30, y: 1.6, z:  30 },
   { x:  30, y: 1.6, z:  30 },
+  { x:   0, y: 1.6, z: -30 },
+  { x:   0, y: 1.6, z:  30 },
+  { x: -30, y: 1.6, z:   0 },
+  { x:  30, y: 1.6, z:   0 },
 ];
 
-const BOUNDS = 40;
+const BOUNDS     = 40;
 const HIT_RADIUS = 0.7;
 
 const CLASSES = {
@@ -19,21 +23,77 @@ const CLASSES = {
   WRAITH:  { hp: 125, speed: 3.5, damage: 95, fireRate: 1333 },
 };
 
+// Arena wall/cover AABBs matching generate-arena.js output
+// Each entry: { minX, maxX, minY, maxY, minZ, maxZ }
+const ARENA_AABBS = [
+  // Outer walls
+  { minX: -40,   maxX:  40,   minY: 0, maxY: 6, minZ: -40.5, maxZ: -39.5 }, // WallN
+  { minX: -40,   maxX:  40,   minY: 0, maxY: 6, minZ:  39.5, maxZ:  40.5 }, // WallS
+  { minX: -40.5, maxX: -39.5, minY: 0, maxY: 6, minZ: -40,   maxZ:  40   }, // WallW
+  { minX:  39.5, maxX:  40.5, minY: 0, maxY: 6, minZ: -40,   maxZ:  40   }, // WallE
+  // Centre corridor walls
+  { minX:  -8.5, maxX:  -7.5, minY: 0, maxY: 4, minZ: -25,   maxZ:  25   }, // CorridorL
+  { minX:   7.5, maxX:   8.5, minY: 0, maxY: 4, minZ: -25,   maxZ:  25   }, // CorridorR
+  // Partial cross-walls
+  { minX: -31,   maxX:  -9,   minY: 0, maxY: 4, minZ: -20.5, maxZ: -19.5 }, // BlockNW
+  { minX:   9,   maxX:  31,   minY: 0, maxY: 4, minZ: -20.5, maxZ: -19.5 }, // BlockNE
+  { minX: -31,   maxX:  -9,   minY: 0, maxY: 4, minZ:  19.5, maxZ:  20.5 }, // BlockSW
+  { minX:   9,   maxX:  31,   minY: 0, maxY: 4, minZ:  19.5, maxZ:  20.5 }, // BlockSE
+  // Cover crates
+  { minX: -16.5, maxX: -13.5, minY: 0, maxY: 2, minZ: -16.5, maxZ: -13.5 },
+  { minX:  13.5, maxX:  16.5, minY: 0, maxY: 2, minZ: -16.5, maxZ: -13.5 },
+  { minX: -16.5, maxX: -13.5, minY: 0, maxY: 2, minZ:  13.5, maxZ:  16.5 },
+  { minX:  13.5, maxX:  16.5, minY: 0, maxY: 2, minZ:  13.5, maxZ:  16.5 },
+  { minX:  -1.5, maxX:   1.5, minY: 0, maxY: 2, minZ: -26.5, maxZ: -23.5 },
+  { minX:  -1.5, maxX:   1.5, minY: 0, maxY: 2, minZ:  23.5, maxZ:  26.5 },
+  { minX: -26.5, maxX: -23.5, minY: 0, maxY: 2, minZ:  -1.5, maxZ:   1.5 },
+  { minX:  23.5, maxX:  26.5, minY: 0, maxY: 2, minZ:  -1.5, maxZ:   1.5 },
+  // Corner pillars
+  { minX: -36,   maxX: -34,   minY: 0, maxY: 6, minZ: -36,   maxZ: -34   },
+  { minX:  34,   maxX:  36,   minY: 0, maxY: 6, minZ: -36,   maxZ: -34   },
+  { minX: -36,   maxX: -34,   minY: 0, maxY: 6, minZ:  34,   maxZ:  36   },
+  { minX:  34,   maxX:  36,   minY: 0, maxY: 6, minZ:  34,   maxZ:  36   },
+  // Elevated platforms
+  { minX: -24,   maxX: -16,   minY: 0, maxY: 1, minZ: -24,   maxZ: -16   },
+  { minX:  16,   maxX:  24,   minY: 0, maxY: 1, minZ:  16,   maxZ:  24   },
+];
+
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
-function raySphereHit(origin, dir, cx, cy, cz, r) {
-  const ocx = origin.x - cx, ocy = origin.y - cy, ocz = origin.z - cz;
-  const b   = ocx * dir.x + ocy * dir.y + ocz * dir.z;
-  const c   = ocx * ocx + ocy * ocy + ocz * ocz - r * r;
-  return b * b - c >= 0;
+// Slab-method ray-AABB intersection — returns hit distance or Infinity
+function rayAABBDist(ro, rd, box) {
+  const invDx = 1 / (rd.x || 1e-10);
+  const invDy = 1 / (rd.y || 1e-10);
+  const invDz = 1 / (rd.z || 1e-10);
+  const tx1 = (box.minX - ro.x) * invDx, tx2 = (box.maxX - ro.x) * invDx;
+  const ty1 = (box.minY - ro.y) * invDy, ty2 = (box.maxY - ro.y) * invDy;
+  const tz1 = (box.minZ - ro.z) * invDz, tz2 = (box.maxZ - ro.z) * invDz;
+  const tmin = Math.max(Math.min(tx1, tx2), Math.min(ty1, ty2), Math.min(tz1, tz2));
+  const tmax = Math.min(Math.max(tx1, tx2), Math.max(ty1, ty2), Math.max(tz1, tz2));
+  if (tmax < 0 || tmin > tmax) return Infinity;
+  return tmin < 0 ? tmax : tmin;
 }
 
 class GameServer {
   constructor(io) {
     this.io = io;
-    this.players = new Map();
+    this.players      = new Map();
     this._spawnIndex  = 0;
     this._tickInterval = null;
+    this.mapAABBs     = ARENA_AABBS;
+  }
+
+  // Check whether a straight line from `from` to `to` is unobstructed by walls
+  isLineClearOfWalls(from, to) {
+    const dir  = { x: to.x - from.x, y: to.y - from.y, z: to.z - from.z };
+    const dist = Math.sqrt(dir.x ** 2 + dir.y ** 2 + dir.z ** 2);
+    if (dist < 0.01) return true;
+    const norm = { x: dir.x / dist, y: dir.y / dist, z: dir.z / dist };
+    for (const box of this.mapAABBs) {
+      const t = rayAABBDist(from, norm, box);
+      if (t !== Infinity && t > 0.15 && t < dist - 0.15) return false;
+    }
+    return true;
   }
 
   // Pick spawn point farthest from all alive players
@@ -56,7 +116,6 @@ class GameServer {
       console.log(`Player connected: ${socket.id}`);
 
       socket.on('player:join', ({ username, class: playerClass, token }) => {
-        // Verify JWT if provided, fall back to guest username
         let resolvedUsername = username || `Ghost_${socket.id.slice(0, 4)}`;
         let userId = null;
 
@@ -65,15 +124,11 @@ class GameServer {
             const payload = jwt.verify(token, SECRET);
             resolvedUsername = payload.username;
             userId = payload.userId;
-          } catch {
-            // Invalid token — continue as guest
-          }
+          } catch { /* invalid token — continue as guest */ }
         }
 
-        const spawn = SPAWN_POINTS[this._spawnIndex % SPAWN_POINTS.length];
-        this._spawnIndex++;
-
-        const cls = CLASSES[playerClass] || CLASSES.SOLDIER;
+        const spawn = this._getFarthestSpawn();
+        const cls   = CLASSES[playerClass] || CLASSES.SOLDIER;
         const player = {
           id:       socket.id,
           userId,
@@ -85,10 +140,12 @@ class GameServer {
           kills:  0,
           deaths: 0,
           dead:   false,
+          spawnProtection: true,
         };
 
         this.players.set(socket.id, player);
         console.log(`Player joined: ${player.username} (${player.class})`);
+        setTimeout(() => { if (this.players.has(socket.id)) this.players.get(socket.id).spawnProtection = false; }, 2500);
 
         socket.emit('game:state', { players: this._getPlayersArray() });
         socket.broadcast.emit('game:state', { players: this._getPlayersArray() });
@@ -97,69 +154,93 @@ class GameServer {
       socket.on('player:move', ({ x, y, z, rotY }) => {
         const p = this.players.get(socket.id);
         if (!p || p.dead) return;
-        p.x = clamp(x, -BOUNDS, BOUNDS);
-        p.y = y;
-        p.z = clamp(z, -BOUNDS, BOUNDS);
+        p.x    = clamp(x, -BOUNDS, BOUNDS);
+        p.y    = y;
+        p.z    = clamp(z, -BOUNDS, BOUNDS);
         p.rotY = rotY;
       });
 
-      socket.on('player:shoot', ({ origin, direction, weaponClass }) => {
+      // ── Shoot handler (targetId-based with wall validation) ────────
+      socket.on('player:shoot', ({ origin, direction, weaponClass, targetId, distance }) => {
         const shooter = this.players.get(socket.id);
         if (!shooter || shooter.dead) return;
 
-        const len = Math.sqrt(direction.x**2 + direction.y**2 + direction.z**2) || 1;
-        const dir = { x: direction.x/len, y: direction.y/len, z: direction.z/len };
+        // No targetId — bullet missed all players (or hit a wall). Nothing to do.
+        if (!targetId) return;
+
+        const target = this.players.get(targetId);
+        if (!target || target.dead || target.spawnProtection) return;
+
+        // ── Anti-cheat checks ──────────────────────────────────────
+        if (distance > 250) return;
+
+        const posDiff = Math.sqrt(
+          (shooter.x - origin.x) ** 2 +
+          (shooter.y - origin.y) ** 2 +
+          (shooter.z - origin.z) ** 2
+        );
+        if (posDiff > 6) return;
+
+        // Wall occlusion check
+        const targetCenter = { x: target.x, y: target.y + 0.8, z: target.z };
+        if (!this.isLineClearOfWalls(origin, targetCenter)) return;
+
+        // Direction dot-product check (must aim within ~32° of target)
+        const toTarget = {
+          x: targetCenter.x - origin.x,
+          y: targetCenter.y - origin.y,
+          z: targetCenter.z - origin.z,
+        };
+        const len = Math.sqrt(toTarget.x ** 2 + toTarget.y ** 2 + toTarget.z ** 2);
+        const dot = (toTarget.x / len) * direction.x +
+                    (toTarget.y / len) * direction.y +
+                    (toTarget.z / len) * direction.z;
+        if (dot < 0.85) return;
+
+        // ── All checks passed — apply damage ──────────────────────
         const damage = (CLASSES[weaponClass || shooter.class] || CLASSES.SOLDIER).damage;
+        target.hp    = Math.max(0, target.hp - damage);
 
-        for (const [tid, target] of this.players) {
-          if (tid === socket.id || target.dead) continue;
-          if (target.spawnProtection) continue;
-          if (!raySphereHit(origin, dir, target.x, target.y, target.z, HIT_RADIUS)) continue;
+        socket.emit('player:hit', { targetId, damage, newHp: target.hp });
 
-          target.hp = Math.max(0, target.hp - damage);
+        const targetSocket = this.io.sockets.sockets.get(targetId);
+        if (targetSocket) {
+          targetSocket.emit('player:damaged', {
+            shooterId: socket.id, damage, newHp: target.hp,
+            hitPos: { x: target.x, y: target.y, z: target.z },
+          });
+        }
 
-          socket.emit('player:hit', { targetId: tid, damage, newHp: target.hp });
+        if (target.hp <= 0) {
+          target.dead = true;
+          target.deaths++;
+          shooter.kills++;
 
-          const targetSocket = this.io.sockets.sockets.get(tid);
-          if (targetSocket) {
-            targetSocket.emit('player:damaged', {
-              shooterId: socket.id, damage, newHp: target.hp,
-              hitPos: { x: target.x, y: target.y, z: target.z },
-            });
+          this.io.emit('player:killed', {
+            killerId:    socket.id,   killerName:  shooter.username,
+            victimId:    targetId,    victimName:  target.username,
+            killerClass: shooter.class,
+          });
+
+          if (shooter.userId) {
+            db.updateStats(shooter.userId, 1, 0, 100);
+            const newStats = db.getStats(shooter.userId);
+            if (newStats) socket.emit('player:xp_update', { xp: newStats.xp, level: newStats.level });
           }
+          if (target.userId) db.updateStats(target.userId, 0, 1, 0);
 
-          if (target.hp <= 0) {
-            target.dead = true;
-            target.deaths++;
-            shooter.kills++;
-
-            this.io.emit('player:killed', {
-              killerId:    socket.id,          killerName:  shooter.username,
-              victimId:    tid,                victimName:  target.username,
-              killerClass: shooter.class,
+          setTimeout(() => {
+            if (!this.players.has(targetId)) return;
+            const sp = this._getFarthestSpawn();
+            const hp = (CLASSES[target.class] || CLASSES.SOLDIER).hp;
+            Object.assign(target, { x: sp.x, y: sp.y, z: sp.z, hp, dead: false, spawnProtection: true });
+            this.io.emit('player:respawned', {
+              id: targetId, x: sp.x, y: sp.y, z: sp.z, hp, class: target.class,
             });
-
-            if (shooter.userId) {
-              db.updateStats(shooter.userId, 1, 0, 100);
-              const newStats = db.getStats(shooter.userId);
-              if (newStats) socket.emit('player:xp_update', { xp: newStats.xp, level: newStats.level });
-            }
-            if (target.userId) db.updateStats(target.userId, 0, 1, 0);
-
             setTimeout(() => {
-              if (!this.players.has(tid)) return;
-              const sp = this._getFarthestSpawn();
-              const hp = (CLASSES[target.class] || CLASSES.SOLDIER).hp;
-              Object.assign(target, { x: sp.x, y: sp.y, z: sp.z, hp, dead: false, spawnProtection: true });
-              this.io.emit('player:respawned', {
-                id: tid, x: sp.x, y: sp.y, z: sp.z, hp, class: target.class,
-              });
-              setTimeout(() => {
-                if (this.players.has(tid)) this.players.get(tid).spawnProtection = false;
-              }, 2500);
-            }, 3000);
-          }
-          break;
+              if (this.players.has(targetId)) this.players.get(targetId).spawnProtection = false;
+            }, 2500);
+          }, 3000);
         }
       });
 
@@ -180,7 +261,6 @@ class GameServer {
   }
 
   _getPlayersArray() { return Array.from(this.players.values()); }
-
   stop() { if (this._tickInterval) clearInterval(this._tickInterval); }
 }
 

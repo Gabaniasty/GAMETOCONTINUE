@@ -1,0 +1,426 @@
+Replace the current map with a real free 3D map loaded from a GLTF/GLB file,
+and completely fix the shooting system so bullets cannot pass through walls.
+This touches Game.js, GameServer.js, Controls.js, and BulletSystem.js.
+
+─────────────────────────────────────────
+SECTION 1 — DOWNLOAD A FREE 3D MAP
+─────────────────────────────────────────
+
+The agent must download one of the following free maps and add the GLB file
+to the project at: public/assets/maps/arena.glb
+
+Use whichever of these is accessible. Try them in order:
+
+OPTION A — Quaternius Sci-Fi Level Pack (CC0, completely free):
+  URL: https://quaternius.com/packs/ultimatescifienvironment.html
+  Download the pack, pick the arena or room scene GLB file from inside it.
+  Rename it to arena.glb and place at public/assets/maps/arena.glb
+
+OPTION B — Kenny.nl Dungeon Pack (CC0, completely free):
+  URL: https://kenney.nl/assets/dungeon-kit
+  Download, assemble or pick a pre-assembled scene GLB.
+  Rename to arena.glb, place at public/assets/maps/arena.glb
+
+OPTION C — Sketchfab free sci-fi arena (CC BY license):
+  Search: https://sketchfab.com/search?q=sci-fi+arena&licenses=322a749bcfa841b29dff1e8a1bb74b0b&type=models
+  Pick any free downloadable model tagged "game ready" or "low poly".
+  Download as GLB format. Rename to arena.glb, place at public/assets/maps/arena.glb
+
+OPTION D — If none of the above are reachable, use this direct CDN-hosted
+  free low-poly arena GLB from the Three.js examples repository:
+  https://threejs.org/examples/models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf
+  (This is only a fallback placeholder — replace with a real arena map when possible)
+
+After placing the file, verify it exists at public/assets/maps/arena.glb before proceeding.
+
+─────────────────────────────────────────
+SECTION 2 — LOAD THE MAP WITH GLTFLoader
+─────────────────────────────────────────
+
+In public/game.html, add this script tag BEFORE main.js:
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+
+Create public/js/MapLoader.js:
+
+class MapLoader {
+  constructor(scene) {
+    this.scene = scene
+    this.collidableMeshes = []   // wall/floor meshes used for bullet occlusion
+    this.loaded = false
+  }
+
+  load(path, onReady) {
+    const loader = new THREE.GLTFLoader()
+    loader.load(
+      path,
+      (gltf) => {
+        const model = gltf.scene
+
+        // Scale and center the map to fit the game world
+        // Compute bounding box of the loaded model
+        const box = new THREE.Box3().setFromObject(model)
+        const size = box.getSize(new THREE.Vector3())
+        const center = box.getCenter(new THREE.Vector3())
+
+        // Scale so the longest dimension is 80 units (matching our game scale)
+        const maxDim = Math.max(size.x, size.y, size.z)
+        const scale = 80 / maxDim
+        model.scale.setScalar(scale)
+
+        // Center the map at world origin
+        model.position.set(-center.x * scale, -box.min.y * scale, -center.z * scale)
+
+        // Apply neon cyberpunk material overrides to all meshes
+        model.traverse((child) => {
+          if (child.isMesh) {
+            // Keep original geometry, override materials for cyberpunk look
+            const originalMap = child.material.map  // preserve any baked textures
+
+            child.material = new THREE.MeshStandardMaterial({
+              map: originalMap || null,
+              color: originalMap ? 0xffffff : 0x0d1a2a,
+              emissive: 0x001133,
+              emissiveIntensity: 0.15,
+              roughness: 0.85,
+              metalness: 0.2,
+            })
+
+            // Add subtle neon edge outlines
+            const edges = new THREE.EdgesGeometry(child.geometry)
+            const line = new THREE.LineSegments(
+              edges,
+              new THREE.LineBasicMaterial({ color: 0x00f5ff, opacity: 0.08, transparent: true })
+            )
+            child.add(line)
+
+            child.castShadow = true
+            child.receiveShadow = true
+
+            // CRITICAL: mark every mesh as collidable for bullet occlusion
+            child.userData.isMapGeometry = true
+            this.collidableMeshes.push(child)
+          }
+        })
+
+        this.scene.add(model)
+        this.loaded = true
+
+        // Add cyberpunk atmosphere on top of the loaded map
+        this.addAtmosphere()
+
+        // Extract spawn points from the map bounding box corners
+        const scaledBox = new THREE.Box3().setFromObject(model)
+        this.spawnPoints = this.generateSpawnPoints(scaledBox)
+
+        onReady(this)
+      },
+      (progress) => {
+        const pct = Math.round((progress.loaded / progress.total) * 100)
+        document.getElementById('loadingText').textContent = `LOADING MAP... ${pct}%`
+      },
+      (error) => {
+        console.error('Map load failed:', error)
+        document.getElementById('loadingText').textContent = 'MAP LOAD FAILED — check console'
+      }
+    )
+  }
+
+  generateSpawnPoints(box) {
+    // Place 8 spawn points at 1.6 units height distributed inside the map
+    const mx = box.min.x + (box.max.x - box.min.x) * 0.2
+    const px = box.min.x + (box.max.x - box.min.x) * 0.8
+    const mz = box.min.z + (box.max.z - box.min.z) * 0.2
+    const pz = box.min.z + (box.max.z - box.min.z) * 0.8
+    const cx = (box.min.x + box.max.x) / 2
+    const cz = (box.min.z + box.max.z) / 2
+    const y  = 1.6
+    return [
+      new THREE.Vector3(mx, y, mz), new THREE.Vector3(px, y, mz),
+      new THREE.Vector3(mx, y, pz), new THREE.Vector3(px, y, pz),
+      new THREE.Vector3(cx, y, mz), new THREE.Vector3(cx, y, pz),
+      new THREE.Vector3(mx, y, cz), new THREE.Vector3(px, y, cz),
+    ]
+  }
+
+  addAtmosphere() {
+    // Fog
+    this.scene.fog = new THREE.FogExp2(0x02020a, 0.025)
+
+    // Ambient light
+    this.scene.add(new THREE.AmbientLight(0x080818, 0.9))
+
+    // Neon point lights scattered through the scene
+    const lights = [
+      { color: 0x00f5ff, pos: [-15, 6, -15] },
+      { color: 0x00f5ff, pos: [ 15, 6,  15] },
+      { color: 0xff2d78, pos: [ 15, 6, -15] },
+      { color: 0xff2d78, pos: [-15, 6,  15] },
+      { color: 0x7b2fff, pos: [  0, 8,   0] },
+    ]
+    lights.forEach(({ color, pos }) => {
+      const light = new THREE.PointLight(color, 3, 28)
+      light.position.set(...pos)
+      this.scene.add(light)
+    })
+  }
+
+  getCollidableMeshes() {
+    return this.collidableMeshes
+  }
+
+  getSpawnPoints() {
+    return this.spawnPoints
+  }
+}
+
+In Game.js:
+  Replace all NeonDistrictMap / old map code with:
+    this.mapLoader = new MapLoader(this.scene)
+    this.mapLoader.load('/assets/maps/arena.glb', (map) => {
+      this.collidableMeshes = map.getCollidableMeshes()
+      this.spawnPoints = map.getSpawnPoints()
+      this.mapReady = true
+      // Pass collidable meshes to Controls and BulletSystem
+      this.controls.setCollidableMeshes(this.collidableMeshes)
+      this.bulletSystem.setCollidableMeshes(this.collidableMeshes)
+    })
+
+  Show a loading screen (dark overlay with "LOADING MAP...") until mapReady is true.
+  Do not start the game loop until the map is fully loaded.
+
+─────────────────────────────────────────
+SECTION 3 — FIX SHOOTING: BULLETS MUST
+           NOT PASS THROUGH WALLS
+─────────────────────────────────────────
+
+This is a critical bug fix. Currently bullets ignore all geometry and only
+check player spheres. This must be completely rewritten.
+
+The rule is simple:
+  A bullet hits the FIRST thing the ray intersects — wall OR player.
+  If a wall is closer than a player, the wall blocks the shot. Full stop.
+
+── CLIENT SIDE — BulletSystem.js ──
+
+Add: setCollidableMeshes(meshes) { this.collidableMeshes = meshes }
+
+Rewrite the shoot / hit detection on the client:
+
+onShoot(origin, direction) {
+  // Build a raycaster from gun barrel
+  const raycaster = new THREE.Raycaster(
+    origin.clone(),
+    direction.clone().normalize(),
+    0,        // near
+    200       // max bullet range
+  )
+
+  // Gather ALL things the ray could hit:
+  // 1. Map geometry (walls, floors, ceilings)
+  // 2. Remote player hitbox meshes (invisible spheres on each remote player)
+  const allTargets = [
+    ...this.collidableMeshes,
+    ...this.playerHitboxes  // see below
+  ]
+
+  const intersections = raycaster.intersectObjects(allTargets, false)
+
+  if (intersections.length === 0) {
+    // Ray hit nothing — spawn bullet that travels full range then disappears
+    this.spawnTravelingBullet(origin, direction, 200)
+    return
+  }
+
+  const first = intersections[0]
+
+  if (first.object.userData.isMapGeometry) {
+    // Ray hit a WALL first — bullet stops at wall, no player damage
+    this.spawnTravelingBullet(origin, direction, first.distance)
+    this.spawnImpactEffect(first.point, 'wall')  // sparks on wall
+    // Do NOT emit player:shoot to server — shot was blocked
+    return
+  }
+
+  if (first.object.userData.isPlayerHitbox) {
+    // Ray hit a PLAYER first (no wall in between) — valid shot
+    const targetId = first.object.userData.playerId
+    this.spawnTravelingBullet(origin, direction, first.distance)
+    // Emit to server for authoritative validation
+    network.emitShoot({ origin, direction, targetId, distance: first.distance })
+    return
+  }
+}
+
+PLAYER HITBOXES for client-side pre-check:
+  For each remote player, create an invisible SphereGeometry(0.7) mesh:
+    material: MeshBasicMaterial, visible: false
+    mesh.userData.isPlayerHitbox = true
+    mesh.userData.playerId = player.id
+  Update hitbox position each frame to match remote player position.
+  Store in this.playerHitboxes array.
+  Add hitboxes to the scene so raycaster can find them.
+
+WALL IMPACT EFFECT — spawnImpactEffect(point, type):
+  'wall':   6 tiny spark particles (BoxGeometry 0.04), color 0xffaa00, 
+            fly outward 0.3–0.8 units, fade over 250ms
+            Small PointLight(0xffaa00, 4, 1.5) at impact, fade 150ms
+  'player': keep existing pink burst particles (unchanged)
+
+── SERVER SIDE — GameServer.js ──
+
+The server must also validate that no wall exists between shooter and target.
+This prevents any client from sending fake shoot packets claiming hits through walls.
+
+Store the map's collision geometry on the server as a list of axis-aligned
+bounding boxes (AABBs). These are the same boxes used for movement collision.
+
+Add to GameServer.js:
+
+setMapCollision(collisionBoxes) {
+  this.mapAABBs = collisionBoxes
+}
+
+rayIntersectsAABB(rayOrigin, rayDir, box) {
+  // Slab method ray-AABB intersection, returns distance or Infinity
+  const invDx = 1 / rayDir.x, invDy = 1 / rayDir.y, invDz = 1 / rayDir.z
+  const tx1 = (box.minX - rayOrigin.x) * invDx
+  const tx2 = (box.maxX - rayOrigin.x) * invDx
+  const ty1 = (box.minY - rayOrigin.y) * invDy
+  const ty2 = (box.maxY - rayOrigin.y) * invDy
+  const tz1 = (box.minZ - rayOrigin.z) * invDz
+  const tz2 = (box.maxZ - rayOrigin.z) * invDz
+  const tmin = Math.max(Math.min(tx1,tx2), Math.min(ty1,ty2), Math.min(tz1,tz2))
+  const tmax = Math.min(Math.max(tx1,tx2), Math.max(ty1,ty2), Math.max(tz1,tz2))
+  if (tmax < 0 || tmin > tmax) return Infinity
+  return tmin < 0 ? tmax : tmin
+}
+
+isLineClearOfWalls(from, to) {
+  // Returns true if no map AABB sits between from and to
+  const dir = { x: to.x-from.x, y: to.y-from.y, z: to.z-from.z }
+  const dist = Math.sqrt(dir.x**2 + dir.y**2 + dir.z**2)
+  const norm = { x: dir.x/dist, y: dir.y/dist, z: dir.z/dist }
+  for (const box of this.mapAABBs) {
+    const t = this.rayIntersectsAABB(from, norm, box)
+    if (t !== Infinity && t > 0.1 && t < dist) return false
+  }
+  return true
+}
+
+Update the 'player:shoot' handler:
+
+socket.on('player:shoot', ({ origin, direction, targetId, distance }) => {
+  const shooter = this.players.get(socket.id)
+  const target  = this.players.get(targetId)
+  if (!shooter || !target || !target.alive) return
+
+  // Server-side sanity checks (anti-cheat basics):
+  // 1. Distance must be reasonable
+  if (distance > 250) return
+
+  // 2. Shooter position must be close to what server has on record
+  const posDiff = Math.sqrt(
+    (shooter.x - origin.x)**2 +
+    (shooter.y - origin.y)**2 +
+    (shooter.z - origin.z)**2
+  )
+  if (posDiff > 6) return  // teleport cheat
+
+  // 3. WALL CHECK — most important fix
+  //    Check if a straight line from shooter to target is blocked by any wall AABB
+  const targetPos = { x: target.x, y: target.y + 0.8, z: target.z }
+  if (!this.isLineClearOfWalls(origin, targetPos)) {
+    // Wall is between shooter and target — shot blocked, ignore
+    return
+  }
+
+  // 4. Target must actually be in the direction shot
+  const toTarget = {
+    x: targetPos.x - origin.x,
+    y: targetPos.y - origin.y,
+    z: targetPos.z - origin.z
+  }
+  const len = Math.sqrt(toTarget.x**2 + toTarget.y**2 + toTarget.z**2)
+  const dot = (toTarget.x/len)*direction.x + (toTarget.y/len)*direction.y + (toTarget.z/len)*direction.z
+  if (dot < 0.85) return  // target not within ~32 degrees of shot direction
+
+  // All checks passed — apply damage
+  const damage = CLASSES[shooter.playerClass].damage
+  target.hp -= damage
+  // ... rest of existing kill/respawn logic unchanged
+})
+
+IMPORTANT: When the GLTF map loads, extract its bounding boxes and send them
+to the server via a special admin/internal socket event or hardcode approximated
+AABBs based on the map's known geometry. The server mapAABBs list does not need
+to be pixel-perfect — rough wall boxes are enough to prevent shoot-through exploits.
+
+─────────────────────────────────────────
+SECTION 4 — MOVEMENT COLLISION WITH LOADED MAP
+─────────────────────────────────────────
+
+The loaded GLTF map also needs to block player movement (not just bullets).
+
+In Controls.js, add: setCollidableMeshes(meshes) { this.collidableMeshes = meshes }
+
+Replace old AABB collision loop with raycaster-based collision:
+
+Use 5 rays per frame for movement collision:
+  Down ray:    from player feet (y-0.05), direction (0,-1,0), length 0.15 — detects ground
+  Forward ray: from player center, camera forward direction, length 0.5 — detects walls ahead
+  Back ray:    from player center, -forward, length 0.5
+  Left ray:    from player center, -right, length 0.5
+  Right ray:   from player center, +right, length 0.5
+
+For each cardinal direction ray: if it hits a collidable mesh within range,
+zero out velocity in that direction and push player back by (range - hit.distance).
+
+Ground ray: if it hits within 0.15 units → grounded = true, snap y to hit.point.y + eyeHeight
+            if nothing hits → grounded = false (falling)
+
+This replaces the old AABB list and works with any loaded geometry automatically.
+
+─────────────────────────────────────────
+SECTION 5 — LOADING SCREEN
+─────────────────────────────────────────
+
+Add a loading overlay to game.html (shown until map is ready):
+
+  <div id="loadingScreen" style="
+    position: fixed; inset: 0; background: #02020a; z-index: 9999;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-family: monospace; color: #00f5ff;
+  ">
+    <div style="font-size: 2.5rem; letter-spacing: 0.3em; margin-bottom: 1.5rem;">
+      NEON GRID
+    </div>
+    <div id="loadingText" style="font-size: 1rem; color: #aaaaff;">INITIALIZING...</div>
+    <div id="loadingBar" style="
+      width: 320px; height: 4px; background: #111133; margin-top: 1.2rem; border-radius: 2px;
+    ">
+      <div id="loadingFill" style="
+        height: 100%; width: 0%; background: #00f5ff;
+        box-shadow: 0 0 8px #00f5ff; transition: width 0.2s; border-radius: 2px;
+      "></div>
+    </div>
+  </div>
+
+In MapLoader.js, update the progress callback to also update #loadingFill width.
+When load completes: fade #loadingScreen opacity to 0 over 600ms, then display: none.
+
+─────────────────────────────────────────
+ACCEPTANCE CRITERIA
+─────────────────────────────────────────
+
+✓ A real GLTF/GLB arena map loads and is visible in the game
+✓ The map has cyberpunk neon material applied (dark walls, glowing edges, colored lights)
+✓ A loading bar is shown while the map downloads
+✓ The game does not start until the map is fully loaded
+✓ Players cannot walk through any wall or floor in the loaded map
+✓ Bullets STOP at the first wall they hit — no shooting through walls
+✓ A spark/impact effect appears where a bullet hits a wall
+✓ Shooting at a player with a wall between you registers NO damage on the server
+✓ The server independently validates wall occlusion — faking a shoot packet is rejected
+✓ Remote player hitboxes are invisible but correctly positioned on each player
+✓ Spawn points are auto-placed based on the loaded map's bounding box
+✓ All existing multiplayer, kill, and respawn logic still works correctly

@@ -1,17 +1,20 @@
 import { CLASSES } from './Classes.js';
 
-const EYE_Y       = 1.65;
-const CROUCH_Y    = 1.1;
-const WALK_SPEED  = 5.5;
+const EYE_Y        = 1.65;
+const CROUCH_Y     = 1.1;
+const WALK_SPEED   = 5.5;
 const SPRINT_SPEED = 8.5;
 const CROUCH_SPEED = 2.8;
-const AIR_SPEED   = 3.5;
+const AIR_SPEED    = 3.5;
 const GROUND_ACCEL = 60;
 const GROUND_FRIC  = 50;
-const AIR_ACCEL   = 18;
-const AIR_FRIC    = 4;
-const GRAVITY     = -22;
-const JUMP_FORCE  = 7.5;
+const AIR_ACCEL    = 18;
+const AIR_FRIC     = 4;
+const GRAVITY      = -22;
+const JUMP_FORCE   = 7.5;
+
+const WALL_DIST    = 0.45;  // push-back radius from walls
+const GROUND_CAST  = 0.3;   // how far below feet to scan for ground
 
 export class Controls {
   constructor(camera, domElement) {
@@ -33,21 +36,27 @@ export class Controls {
     this._lastMouseX = null;
     this._lastMouseY = null;
 
-    // Velocity & physics state
     this._vel          = { x: 0, y: 0, z: 0 };
     this._currentEyeY  = EYE_Y;
     this._bobTimer     = 0;
     this._crouching    = false;
     this._jumpHeld     = false;
+    this._onGround     = true;
 
-    // Class-based fire rate
+    // Collidable meshes — set after map loads via setCollidableMeshes()
+    this.collidableMeshes = [];
+
     this._playerClass  = localStorage.getItem('ng_class') || 'SOLDIER';
     this._lastShotTime = 0;
 
     this._bindEvents();
   }
 
-  // ── Fire rate gate ──────────────────────────────────────────────────
+  setCollidableMeshes(meshes) {
+    this.collidableMeshes = meshes;
+  }
+
+  // ── Fire rate gate ───────────────────────────────────────────────────
   _canShoot() {
     const fireRate = CLASSES[this._playerClass]?.fireRate ?? 200;
     const now = Date.now();
@@ -56,13 +65,11 @@ export class Controls {
     return true;
   }
 
-  // ── Main physics update (called every frame from main.js) ────────────
+  // ── Main physics update ──────────────────────────────────────────────
   update(camera, dt) {
     if (!this.isPlaying) return;
 
-    const onGround = camera.position.y <= this._currentEyeY + 0.06;
-
-    // Crouch target height
+    // Crouch
     this._crouching = !!(this.keys['KeyC'] || this.keys['ControlLeft'] || this.keys['ControlRight']);
     const targetEyeY = this._crouching ? CROUCH_Y : EYE_Y;
     this._currentEyeY += (targetEyeY - this._currentEyeY) * Math.min(1, 10 * dt);
@@ -76,19 +83,18 @@ export class Controls {
       if (this.keys['KeyD'] || this.keys['ArrowRight']) ix += 1;
     }
     const hasInput = ix !== 0 || iz !== 0;
-    if (hasInput) {
-      const len = Math.sqrt(ix * ix + iz * iz);
-      ix /= len; iz /= len;
-    }
+    if (hasInput) { const len = Math.sqrt(ix * ix + iz * iz); ix /= len; iz /= len; }
 
-    // Camera-space wish direction
-    const cos = Math.cos(this.yaw), sin = Math.sin(this.yaw);
+    // Camera-space wish direction (yaw-only, horizontal)
+    const cos   = Math.cos(this.yaw), sin = Math.sin(this.yaw);
     const wishX = ix * cos + iz * sin;
     const wishZ = -ix * sin + iz * cos;
 
-    const sprinting  = this.isSprinting() && !this._crouching && hasInput;
-    const targetSpeed = this._crouching ? CROUCH_SPEED :
-                        sprinting       ? SPRINT_SPEED : WALK_SPEED;
+    const sprinting   = this.isSprinting() && !this._crouching && hasInput;
+    const targetSpeed = this._crouching ? CROUCH_SPEED : sprinting ? SPRINT_SPEED : WALK_SPEED;
+
+    // Use last frame's ground state for acceleration decision
+    const onGround = this._onGround;
 
     if (onGround) {
       if (hasInput) {
@@ -100,44 +106,45 @@ export class Controls {
         this._vel.x *= fric;
         this._vel.z *= fric;
       }
-      // Jump
       if (!this.isDead && this.keys['Space'] && !this._jumpHeld) {
-        this._vel.y   = JUMP_FORCE;
+        this._vel.y    = JUMP_FORCE;
         this._jumpHeld = true;
       }
       if (!this.keys['Space']) this._jumpHeld = false;
     } else {
-      // Air movement
       this._vel.x += wishX * AIR_ACCEL * dt;
       this._vel.z += wishZ * AIR_ACCEL * dt;
       const hs = Math.sqrt(this._vel.x ** 2 + this._vel.z ** 2);
-      if (hs > AIR_SPEED) {
-        this._vel.x = (this._vel.x / hs) * AIR_SPEED;
-        this._vel.z = (this._vel.z / hs) * AIR_SPEED;
-      }
+      if (hs > AIR_SPEED) { this._vel.x = (this._vel.x / hs) * AIR_SPEED; this._vel.z = (this._vel.z / hs) * AIR_SPEED; }
       const fric = Math.max(0, 1 - AIR_FRIC * dt);
       this._vel.x *= fric;
       this._vel.z *= fric;
     }
 
-    // Gravity
     this._vel.y += GRAVITY * dt;
 
-    // Apply velocity to camera
+    // Apply velocity
     camera.position.x += this._vel.x * dt;
     camera.position.z += this._vel.z * dt;
     camera.position.y += this._vel.y * dt;
 
-    // Ground landing
-    const minY = this._currentEyeY;
-    if (camera.position.y <= minY) {
-      camera.position.y = minY;
-      if (this._vel.y < 0) this._vel.y = 0;
+    // Ground + wall collision
+    if (this.collidableMeshes.length > 0) {
+      this._onGround = this._doGroundCheck(camera);
+      this._doWallCheck(camera);
+    } else {
+      // Fallback: flat floor at y=0
+      const minY = this._currentEyeY;
+      this._onGround = camera.position.y <= minY + 0.06;
+      if (camera.position.y <= minY) {
+        camera.position.y = minY;
+        if (this._vel.y < 0) this._vel.y = 0;
+      }
     }
 
     // Head bob
-    const hspd     = Math.sqrt(this._vel.x ** 2 + this._vel.z ** 2);
-    const grounded2 = camera.position.y <= this._currentEyeY + 0.06;
+    const hspd      = Math.sqrt(this._vel.x ** 2 + this._vel.z ** 2);
+    const grounded2 = this._onGround;
     if (hspd > 0.5 && grounded2 && !this.isDead) {
       const bobSpd = sprinting ? 14 : 10;
       const bobAmt = sprinting ? 0.042 : 0.028;
@@ -145,6 +152,57 @@ export class Controls {
       camera.position.y += Math.sin(this._bobTimer * bobSpd) * bobAmt;
     } else {
       this._bobTimer *= Math.max(0, 1 - 8 * dt);
+    }
+  }
+
+  // ── Ground detection + snap ──────────────────────────────────────────
+  _doGroundCheck(camera) {
+    const feetY  = camera.position.y - this._currentEyeY;
+    // Cast from slightly above feet downward
+    const origin = new THREE.Vector3(camera.position.x, feetY + GROUND_CAST, camera.position.z);
+    const ray    = new THREE.Raycaster(origin, new THREE.Vector3(0, -1, 0), 0, GROUND_CAST + 0.08);
+    const hits   = ray.intersectObjects(this.collidableMeshes, false);
+
+    if (hits.length > 0) {
+      const surfY = hits[0].point.y;
+      // Snap feet to surface if sinking or very close
+      if (feetY <= surfY + 0.08) {
+        camera.position.y = surfY + this._currentEyeY;
+        if (this._vel.y < 0) this._vel.y = 0;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  // ── Horizontal wall push-back ────────────────────────────────────────
+  _doWallCheck(camera) {
+    // Horizontal forward/right based on yaw (no pitch component)
+    const fwd   = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+    const right  = new THREE.Vector3( Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    const dirs  = [fwd, fwd.clone().negate(), right, right.clone().negate()];
+
+    // Cast from chest height (not eye) so floor slabs don't trigger lateral push
+    const origin = new THREE.Vector3(
+      camera.position.x,
+      camera.position.y - this._currentEyeY * 0.45,
+      camera.position.z
+    );
+
+    for (const dir of dirs) {
+      const ray  = new THREE.Raycaster(origin, dir, 0, WALL_DIST);
+      const hits = ray.intersectObjects(this.collidableMeshes, false);
+      if (hits.length > 0 && hits[0].distance < WALL_DIST) {
+        const push = WALL_DIST - hits[0].distance;
+        camera.position.x -= dir.x * push;
+        camera.position.z -= dir.z * push;
+        // Zero velocity toward this wall
+        const dotV = this._vel.x * dir.x + this._vel.z * dir.z;
+        if (dotV > 0) {
+          this._vel.x -= dotV * dir.x;
+          this._vel.z -= dotV * dir.z;
+        }
+      }
     }
   }
 
@@ -221,7 +279,6 @@ export class Controls {
   isJumping()   { return !!this.keys['Space']; }
   isCrouching() { return this._crouching; }
 
-  // Legacy stubs (kept for compatibility)
   getSpeed()          { return CLASSES[this._playerClass]?.speed ?? 8; }
   getMovementVector() { return { x: 0, z: 0 }; }
 

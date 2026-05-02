@@ -19,6 +19,57 @@
       cursor: none;
     }
 
+    /* ── Loading screen ── */
+    #loadingScreen {
+      position: fixed;
+      inset: 0;
+      background: #02020a;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Courier New', monospace;
+      color: #00f5ff;
+    }
+
+    #loadingTitle {
+      font-size: 2.5rem;
+      letter-spacing: 0.35em;
+      font-weight: 700;
+      text-shadow: 0 0 14px #00f5ff, 0 0 28px #00f5ff;
+      margin-bottom: 1.6rem;
+      animation: loadPulse 1.8s ease-in-out infinite;
+    }
+
+    @keyframes loadPulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.55; }
+    }
+
+    #loadingText {
+      font-size: 0.85rem;
+      letter-spacing: 0.18em;
+      color: #aaaaff;
+      margin-bottom: 1.2rem;
+    }
+
+    #loadingBar {
+      width: 320px;
+      height: 4px;
+      background: #111133;
+      border-radius: 2px;
+    }
+
+    #loadingFill {
+      height: 100%;
+      width: 0%;
+      background: #00f5ff;
+      box-shadow: 0 0 8px #00f5ff;
+      transition: width 0.2s ease;
+      border-radius: 2px;
+    }
+
     /* ── Pointer-lock overlay ── */
     #lock-overlay {
       position: fixed;
@@ -72,7 +123,6 @@
       background: rgba(0, 245, 255, 0.85);
     }
 
-    /* horizontal bar */
     #crosshair::before {
       width: 18px;
       height: 2px;
@@ -80,7 +130,6 @@
       left: -9px;
     }
 
-    /* vertical bar */
     #crosshair::after {
       width: 2px;
       height: 18px;
@@ -88,7 +137,6 @@
       left: -1px;
     }
 
-    /* center dot gap */
     #crosshair-dot {
       width: 3px;
       height: 3px;
@@ -102,18 +150,28 @@
   </style>
 </head>
 <body>
+  <!-- Loading screen (visible until GLTF map finishes loading) -->
+  <div id="loadingScreen">
+    <div id="loadingTitle">NEON GRID</div>
+    <div id="loadingText">INITIALIZING...</div>
+    <div id="loadingBar">
+      <div id="loadingFill"></div>
+    </div>
+  </div>
+
   <canvas id="gameCanvas"></canvas>
 
-  <!-- Click-to-play overlay -->
+  <!-- Click-to-play overlay (shown after loading completes) -->
   <div id="lock-overlay">
     <h2>CLICK TO PLAY</h2>
     <p>WASD — MOVE &nbsp;·&nbsp; MOUSE — AIM &nbsp;·&nbsp; SPACE — JUMP &nbsp;·&nbsp; SHIFT — SPRINT</p>
   </div>
 
-  <!-- Crosshair (shown only when pointer locked) -->
+  <!-- Crosshair -->
   <div id="crosshair"><div id="crosshair-dot"></div></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
   <script src="/socket.io/socket.io.js"></script>
   <script type="module" src="/js/main.js"></script>
 </body>

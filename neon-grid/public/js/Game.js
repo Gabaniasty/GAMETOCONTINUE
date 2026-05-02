@@ -1,6 +1,7 @@
 import { Controls }           from './Controls.js';
 import { buildCharacterModel } from './CharacterModel.js';
 import { buildWeapon }         from './WeaponBuilder.js';
+import { MapLoader }           from './MapLoader.js';
 
 const CLASS_COLORS = {
   SOLDIER: 0x00f5ff,
@@ -23,8 +24,7 @@ export class Game {
 
     // ── Main scene & camera ───────────────────────────────────────
     this.scene  = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0a0a0f);
-    this.scene.fog        = new THREE.FogExp2(0x0a0a0f, 0.05);
+    this.scene.background = new THREE.Color(0x02020a);
 
     this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 200);
     this.camera.position.set(0, 1.65, 0);
@@ -47,65 +47,21 @@ export class Game {
     // ── Transient VFX ─────────────────────────────────────────────
     this._vfxObjects = [];
 
-    this._buildLights();
-    this._buildMap();
-    this._buildWeaponScene();
+    // ── Map state ─────────────────────────────────────────────────
+    this.mapReady         = false;
+    this.collidableMeshes = [];
 
+    this._buildWeaponScene();
     window.addEventListener('resize', () => this._onResize());
   }
 
-  // ── Lights ───────────────────────────────────────────────────────
-  _buildLights() {
-    this.scene.add(new THREE.AmbientLight(0x111133, 1));
-    [
-      { color: 0x00f5ff, pos: [20, 3,  20] },
-      { color: 0xff2d78, pos: [-20, 3, -20] },
-      { color: 0x7b2fff, pos: [20, 3,  -20] },
-    ].forEach(({ color, pos }) => {
-      const l = new THREE.PointLight(color, 2, 30);
-      l.position.set(...pos);
-      l.castShadow = true;
-      this.scene.add(l);
-    });
-  }
-
-  // ── Map ──────────────────────────────────────────────────────────
-  _buildMap() {
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(80, 80),
-      new THREE.MeshStandardMaterial({ color: 0x111122 })
-    );
-    floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
-    this.scene.add(floor);
-
-    const grid = new THREE.GridHelper(80, 80, 0x00f5ff, 0x003344);
-    grid.position.y = 0.01;
-    this.scene.add(grid);
-
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x0d0d22, emissive: 0x00f5ff, emissiveIntensity: 0.1 });
-    this._walls = [];
-    [[0, 2, -40, 0], [0, 2, 40, 0], [-40, 2, 0, Math.PI / 2], [40, 2, 0, Math.PI / 2]]
-      .forEach(([px, py, pz, ry]) => {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(80, 4, 1), wallMat);
-        m.position.set(px, py, pz); m.rotation.y = ry;
-        m.castShadow = true; m.receiveShadow = true;
-        this.scene.add(m); this._walls.push(m);
-      });
-
-    const coverMat = new THREE.MeshStandardMaterial({ color: 0x1a0033, emissive: 0xff2d78, emissiveIntensity: 0.05 });
-    [[-15,0,-15],[15,0,-15],[-15,0,15],[15,0,15],[0,0,-25],[0,0,25],[-25,0,0],[25,0,0]]
-      .forEach(([px,,pz]) => {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(3, 2, 3), coverMat);
-        m.position.set(px, 1, pz); m.castShadow = true; m.receiveShadow = true;
-        this.scene.add(m);
-      });
-
-    const pillarMat = new THREE.MeshStandardMaterial({ color: 0x0d0d22, emissive: 0x7b2fff, emissiveIntensity: 0.1 });
-    [[-35,0,-35],[35,0,-35],[-35,0,35],[35,0,35]].forEach(([px,,pz]) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(2, 6, 2), pillarMat);
-      m.position.set(px, 3, pz); m.castShadow = true; m.receiveShadow = true;
-      this.scene.add(m);
+  // ── Map loading ───────────────────────────────────────────────────
+  loadMap(path, onReady) {
+    const loader = new MapLoader(this.scene);
+    loader.load(path, (map) => {
+      this.collidableMeshes = map.getCollidableMeshes();
+      this.mapReady         = true;
+      if (onReady) onReady(map);
     });
   }
 
@@ -119,19 +75,16 @@ export class Game {
     wLight.position.set(0, 1, 0);
     this.weaponScene.add(wLight);
 
-    // Build class-specific weapon from WeaponBuilder
     this._gunGroup = buildWeapon(this._localClass);
     this._GUN_BASE = { x: 0.2, y: -0.22, z: -0.35, rx: 0.03, rz: -0.04 };
     this._gunGroup.position.set(0.2, -0.22, -0.35);
     this._gunGroup.rotation.set(0.03, 0, -0.04);
     this.weaponScene.add(this._gunGroup);
 
-    // Muzzle flash point light
     this._muzzleLight = new THREE.PointLight(this._localClassColor, 0, 2);
     this._muzzleLight.position.set(0.2, -0.195, -0.72);
     this.weaponScene.add(this._muzzleLight);
 
-    // Muzzle flash sprite
     const flashTex = this._makeMuzzleFlashTexture();
     this._muzzleFlashSprite = new THREE.Mesh(
       new THREE.PlaneGeometry(0.12, 0.12),
@@ -214,7 +167,6 @@ export class Game {
       seen.add(p.id);
       let g = this._remoteMeshes.get(p.id);
 
-      // Newly dead — trigger fall animation, hand off to dying list
       if (p.dead) {
         if (g && !g.neon_dying) {
           g.neon_playDeath();
@@ -224,14 +176,12 @@ export class Game {
         return;
       }
 
-      // Alive — create model if missing (handles fresh spawns after death)
       if (!g) {
         g = this._createRemoteMesh(p);
         g.position.set(p.x, (p.y || 1.65) - 1.65, p.z);
         this._remoteMeshes.set(p.id, g);
       }
 
-      // Lerp toward server position
       const k  = Math.min(1, 10 * dt);
       const ty = (p.y || 1.65) - 1.65;
       g.position.x += (p.x  - g.position.x) * k;
@@ -239,14 +189,12 @@ export class Game {
       g.position.z += (p.z  - g.position.z) * k;
       g.rotation.y  = p.rotY || 0;
 
-      // Update floating HP bar
       if (g.neon_setHp && p.hp !== undefined) {
         const MAX_HP = { SOLDIER: 100, GHOST: 75, WRAITH: 125 };
         g.neon_setHp(p.hp, MAX_HP[p.class] || 100);
       }
     });
 
-    // Tick falling/fading death animations
     for (let i = this._dyingModels.length - 1; i >= 0; i--) {
       const g = this._dyingModels[i];
       if (g.neon_updateDeath(dt)) {
@@ -255,7 +203,6 @@ export class Game {
       }
     }
 
-    // Prune disconnected players
     this._remoteMeshes.forEach((g, id) => {
       if (!seen.has(id)) { this.scene.remove(g); this._remoteMeshes.delete(id); }
     });
@@ -274,10 +221,7 @@ export class Game {
   }
 
   hideSpawnProtection() {
-    if (this._spawnShield) {
-      this.scene.remove(this._spawnShield);
-      this._spawnShield = null;
-    }
+    if (this._spawnShield) { this.scene.remove(this._spawnShield); this._spawnShield = null; }
   }
 
   tickSpawnShield(camera) {
@@ -340,7 +284,7 @@ export class Game {
     }
   }
 
-  // ── Collision ──────────────────────────────────────────────────────
+  // ── Safety arena bounds (outer clamp only) ────────────────────────
   _clampToWalls(pos) {
     const HALF = 39.4, R = 0.4;
     pos.x = Math.max(-HALF + R, Math.min(HALF - R, pos.x));
