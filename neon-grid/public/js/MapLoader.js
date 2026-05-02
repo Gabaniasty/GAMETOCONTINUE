@@ -1,9 +1,9 @@
 export class MapLoader {
   constructor(scene) {
-    this.scene           = scene;
+    this.scene            = scene;
     this.collidableMeshes = [];
-    this.spawnPoints     = [];
-    this.loaded          = false;
+    this.spawnPoints      = [];
+    this.loaded           = false;
   }
 
   load(path, onReady) {
@@ -13,7 +13,7 @@ export class MapLoader {
       (gltf) => {
         const model = gltf.scene;
 
-        // Scale and center to fit the game world (longest axis = 80 units)
+        // Scale and center — longest axis = 80 units, floor at y = 0
         const box    = new THREE.Box3().setFromObject(model);
         const size   = box.getSize(new THREE.Vector3());
         const center = box.getCenter(new THREE.Vector3());
@@ -23,6 +23,13 @@ export class MapLoader {
         model.scale.setScalar(scale);
         model.position.set(-center.x * scale, -box.min.y * scale, -center.z * scale);
 
+        this.scene.add(model);
+
+        // ── CRITICAL: update world matrices NOW so raycasts are correct ──
+        // Without this, every mesh's matrixWorld is still an identity matrix
+        // and all collision rays miss until after the very first render pass.
+        model.updateMatrixWorld(true);
+
         // Apply cyberpunk material overrides + collect collidable meshes
         model.traverse((child) => {
           if (!child.isMesh) return;
@@ -30,17 +37,18 @@ export class MapLoader {
           const origMap = child.material ? child.material.map : null;
           child.material = new THREE.MeshStandardMaterial({
             map:               origMap || null,
-            color:             origMap ? 0xffffff : 0x0d1a2a,
-            emissive:          new THREE.Color(0x001133),
-            emissiveIntensity: 0.15,
-            roughness:         0.85,
-            metalness:         0.2,
+            color:             origMap ? 0xffffff : 0x0d2035,
+            emissive:          new THREE.Color(0x001a44),
+            emissiveIntensity: 0.55,
+            roughness:         0.8,
+            metalness:         0.3,
           });
 
+          // Neon edge outline — visible at 0.6 opacity (was 0.08 = invisible)
           const edges = new THREE.EdgesGeometry(child.geometry);
           const line  = new THREE.LineSegments(
             edges,
-            new THREE.LineBasicMaterial({ color: 0x00f5ff, opacity: 0.08, transparent: true })
+            new THREE.LineBasicMaterial({ color: 0x00f5ff, opacity: 0.6, transparent: true })
           );
           child.add(line);
 
@@ -51,16 +59,14 @@ export class MapLoader {
           this.collidableMeshes.push(child);
         });
 
-        this.scene.add(model);
         this.loaded = true;
 
-        // Update progress bar to 100%
+        // Progress bar to 100%
         const fill = document.getElementById('loadingFill');
         if (fill) fill.style.width = '100%';
 
         this._addAtmosphere();
 
-        // Extract spawn points from the loaded model's bounding box
         const scaledBox = new THREE.Box3().setFromObject(model);
         this.spawnPoints = this._generateSpawnPoints(scaledBox);
 
@@ -107,18 +113,38 @@ export class MapLoader {
   }
 
   _addAtmosphere() {
-    this.scene.fog = new THREE.FogExp2(0x02020a, 0.022);
-    this.scene.add(new THREE.AmbientLight(0x080818, 0.9));
+    // Fog
+    this.scene.fog = new THREE.FogExp2(0x02020a, 0.018);
 
+    // Hemisphere — sky tint from above, dark ground below
+    const hemi = new THREE.HemisphereLight(0x0055aa, 0x001122, 1.5);
+    this.scene.add(hemi);
+
+    // Ambient — must be bright enough to see geometry in shadow
+    this.scene.add(new THREE.AmbientLight(0x223355, 5));
+
+    // Overhead fill light so the floor is always lit
+    const fill = new THREE.DirectionalLight(0x334466, 1.5);
+    fill.position.set(0, 20, 0);
+    fill.target.position.set(0, 0, 0);
+    this.scene.add(fill);
+    this.scene.add(fill.target);
+
+    // Coloured neon point lights spread around the arena
     const lights = [
-      { color: 0x00f5ff, pos: [-15, 6, -15] },
-      { color: 0x00f5ff, pos: [ 15, 6,  15] },
-      { color: 0xff2d78, pos: [ 15, 6, -15] },
-      { color: 0xff2d78, pos: [-15, 6,  15] },
-      { color: 0x7b2fff, pos: [  0, 8,   0] },
+      { color: 0x00f5ff, pos: [-15, 6, -15], intensity: 10 },
+      { color: 0x00f5ff, pos: [ 15, 6,  15], intensity: 10 },
+      { color: 0xff2d78, pos: [ 15, 6, -15], intensity: 10 },
+      { color: 0xff2d78, pos: [-15, 6,  15], intensity: 10 },
+      { color: 0x7b2fff, pos: [  0, 8,   0], intensity: 14 },
+      // Extra mid-range fill lights
+      { color: 0x00aaff, pos: [-30, 5,   0], intensity: 7 },
+      { color: 0x00aaff, pos: [ 30, 5,   0], intensity: 7 },
+      { color: 0xff4499, pos: [  0, 5, -30], intensity: 7 },
+      { color: 0xff4499, pos: [  0, 5,  30], intensity: 7 },
     ];
-    lights.forEach(({ color, pos }) => {
-      const light = new THREE.PointLight(color, 3, 28);
+    lights.forEach(({ color, pos, intensity }) => {
+      const light = new THREE.PointLight(color, intensity, 40);
       light.position.set(...pos);
       this.scene.add(light);
     });

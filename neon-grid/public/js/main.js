@@ -115,6 +115,9 @@ game._animate = function () {
   const dt = Math.min(game._clock.getDelta(), 0.05);
   const { controls, camera } = game;
 
+  // Keep world matrices fresh every frame so raycasts hit actual geometry
+  game.scene.updateMatrixWorld();
+
   controls.update(camera, dt);
   game._clampToWalls(camera.position);
   controls.applyToCamera();
