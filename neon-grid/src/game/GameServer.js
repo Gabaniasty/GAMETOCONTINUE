@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const db  = require('../db/Database');
 const { calculateRPChange, getRankFromRP } = require('./RankSystem');
+const { Matchmaker } = require('./Matchmaker');
 
 const SECRET = process.env.JWT_SECRET || 'neon_grid_secret_change_in_prod';
 
@@ -83,6 +84,9 @@ class GameServer {
     this._roundTimer    = null;
     this._currentMatchId  = null;
     this._roundStartTime  = 0;
+
+    // ── Matchmaker ───────────────────────────────────────────────
+    this.matchmaker = new Matchmaker(io);
   }
 
   isLineClearOfWalls(from, to) {
@@ -256,6 +260,15 @@ class GameServer {
         }
       });
 
+      // ── Matchmaking queue ────────────────────────────────────────
+      socket.on('queue:join', ({ userId, username, rankPoints, playerClass }) => {
+        this.matchmaker.joinQueue(socket, { userId, username, rankPoints, playerClass });
+      });
+
+      socket.on('queue:leave', () => {
+        this.matchmaker.leaveQueue(socket.id);
+      });
+
       // ── Host starts the round ────────────────────────────────────
       socket.on('game:start', () => {
         if (socket.id !== this.hostId) return;
@@ -264,6 +277,7 @@ class GameServer {
       });
 
       socket.on('disconnect', () => {
+        this.matchmaker.leaveQueue(socket.id);
         const p = this.players.get(socket.id);
         if (p) console.log(`Player left: ${p.username} (${socket.id})`);
         this.players.delete(socket.id);

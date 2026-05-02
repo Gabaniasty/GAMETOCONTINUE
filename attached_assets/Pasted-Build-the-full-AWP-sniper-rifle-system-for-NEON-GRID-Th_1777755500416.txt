@@ -1,0 +1,383 @@
+Build the full AWP (sniper rifle) system for NEON GRID.
+This is the only weapon. It must have a detailed model, working scope,
+bolt-action animation, realistic feel, and proper ADS mechanics.
+
+── public/js/AWPWeapon.js ──
+
+class AWPWeapon {
+  constructor(weaponScene, camera, soundSystem) {
+    this.weaponScene = weaponScene
+    this.camera = camera
+    this.sound = soundSystem
+    this.isADS = false
+    this.canShoot = true
+    this.isReloading = false
+    this.ammo = 5
+    this.maxAmmo = 5
+    this.reserveAmmo = 25
+    this.fireRate = 1400       // ms between shots
+    this.reloadTime = 3500     // ms for reload
+    this.lastShotTime = 0
+    this.adsProgress = 0       // 0=hip, 1=fully scoped
+    this.adsSpeed = 5          // units per second for ADS transition
+    this.swayTimer = 0
+    this.recoilOffset = { x: 0, y: 0 }
+    this.boltAnimating = false
+
+    this.buildModel()
+    this.buildScopeOverlay()
+  }
+
+  buildModel() {
+    // All positions relative to viewmodel origin
+    this.group = new THREE.Group()
+
+    const body = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.6, metalness: 0.7 })
+    const metal = new THREE.MeshStandardMaterial({ color: 0x2a2a3e, roughness: 0.4, metalness: 0.9 })
+    const wood  = new THREE.MeshStandardMaterial({ color: 0x2d1a0a, roughness: 0.9, metalness: 0.0 })
+    const glow  = new THREE.MeshStandardMaterial({ color: 0x001a33, emissive: 0x00f5ff, emissiveIntensity: 0.7, roughness: 0.3, metalness: 0.8 })
+    const lens  = new THREE.MeshStandardMaterial({ color: 0x001133, emissive: 0x0066ff, emissiveIntensity: 1.2, roughness: 0.0, metalness: 1.0, transparent: true, opacity: 0.85 })
+
+    const add = (geo, mat, px, py, pz, rx=0, ry=0, rz=0) => {
+      const m = new THREE.Mesh(geo, mat)
+      m.position.set(px, py, pz)
+      m.rotation.set(rx, ry, rz)
+      this.group.add(m)
+      const edges = new THREE.EdgesGeometry(geo)
+      const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x00f5ff, opacity: 0.2, transparent: true }))
+      line.position.copy(m.position)
+      line.rotation.copy(m.rotation)
+      this.group.add(line)
+      return m
+    }
+
+    // ── RECEIVER ──
+    add(new THREE.BoxGeometry(0.055, 0.068, 0.30), body,  0,      0,      0.02)
+
+    // ── BARREL (long) ──
+    add(new THREE.BoxGeometry(0.020, 0.020, 0.50), metal, 0,      0.017, -0.30)
+
+    // ── MUZZLE BRAKE ──
+    add(new THREE.BoxGeometry(0.034, 0.028, 0.048), metal, 0,     0.017, -0.548)
+    add(new THREE.BoxGeometry(0.034, 0.006, 0.012), metal, 0,     0.028, -0.530)  // top port
+    add(new THREE.BoxGeometry(0.034, 0.006, 0.012), metal, 0,     0.006, -0.530)  // bottom port
+
+    // ── SCOPE BODY ──
+    add(new THREE.BoxGeometry(0.034, 0.034, 0.22),  body,  0,     0.068, -0.03)
+    // Scope objective lens (front)
+    const frontLens = add(new THREE.CylinderGeometry(0.017, 0.017, 0.012, 16), lens, 0, 0.068, -0.14)
+    frontLens.rotation.x = Math.PI / 2
+    // Scope eyepiece lens (rear)
+    const rearLens  = add(new THREE.CylinderGeometry(0.013, 0.013, 0.010, 16), lens, 0, 0.068,  0.08)
+    rearLens.rotation.x = Math.PI / 2
+    // Scope turrets (elevation and windage knobs)
+    add(new THREE.CylinderGeometry(0.010, 0.010, 0.025, 8), metal, 0.027, 0.082, -0.01)  // windage
+    add(new THREE.CylinderGeometry(0.010, 0.010, 0.025, 8), metal, 0,     0.096, -0.01)  // elevation — rotated
+    // Scope mount rings
+    add(new THREE.BoxGeometry(0.060, 0.022, 0.024), metal, 0,     0.052, -0.08)
+    add(new THREE.BoxGeometry(0.060, 0.022, 0.024), metal, 0,     0.052,  0.05)
+
+    // ── NEON ACCENT LINE along scope ──
+    add(new THREE.BoxGeometry(0.003, 0.003, 0.21), glow,  0.018, 0.068, -0.03)
+
+    // ── HANDGUARD ──
+    add(new THREE.BoxGeometry(0.040, 0.036, 0.22), wood,  0,    -0.012, -0.18)
+    // Handguard vents
+    for (let i = 0; i < 4; i++) {
+      add(new THREE.BoxGeometry(0.042, 0.005, 0.014), body, 0, -0.022, -0.10 - i * 0.04)
+    }
+
+    // ── MAGAZINE ──
+    add(new THREE.BoxGeometry(0.036, 0.058, 0.040), body, 0, -0.075, 0.00)
+
+    // ── TRIGGER GUARD ──
+    add(new THREE.BoxGeometry(0.040, 0.006, 0.055), metal, 0, -0.044, 0.055)
+    add(new THREE.BoxGeometry(0.006, 0.028, 0.006), metal, 0, -0.030, 0.028)
+    add(new THREE.BoxGeometry(0.006, 0.028, 0.006), metal, 0, -0.030, 0.083)
+
+    // ── PISTOL GRIP ──
+    add(new THREE.BoxGeometry(0.038, 0.082, 0.044), wood, 0, -0.082, 0.095, 0.18, 0, 0)
+
+    // ── STOCK ──
+    add(new THREE.BoxGeometry(0.040, 0.046, 0.30), wood,  0,  -0.003, 0.215)
+    add(new THREE.BoxGeometry(0.040, 0.068, 0.022), metal, 0, -0.018, 0.362)
+    // Cheek rest
+    add(new THREE.BoxGeometry(0.038, 0.022, 0.11), wood, 0,  0.034, 0.175)
+    // Rubber butt pad
+    add(new THREE.BoxGeometry(0.040, 0.072, 0.012), body, 0, -0.018, 0.372)
+
+    // ── BOLT HANDLE ──
+    this.boltGroup = new THREE.Group()
+    const boltShaft = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.008, 0.055), metal)
+    boltShaft.position.set(0.04, 0.008, 0.06)
+    boltShaft.rotation.z = -0.5
+    const boltKnob = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 8), metal)
+    boltKnob.position.set(0.066, -0.022, 0.06)
+    this.boltGroup.add(boltShaft, boltKnob)
+    this.group.add(this.boltGroup)
+
+    // ── BIPOD (folded) ──
+    add(new THREE.BoxGeometry(0.007, 0.055, 0.007), metal, -0.020, -0.042, -0.30)
+    add(new THREE.BoxGeometry(0.007, 0.055, 0.007), metal,  0.020, -0.042, -0.30)
+
+    // Position viewmodel — hip fire default
+    this.group.position.set(0.19, -0.22, -0.35)
+    this.group.rotation.set(0.03, 0, -0.04)
+    this.weaponScene.add(this.group)
+  }
+
+  buildScopeOverlay() {
+    // Full-screen scope overlay canvas drawn over the game
+    this.scopeCanvas = document.createElement('canvas')
+    this.scopeCanvas.style.cssText = `
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; display: none; z-index: 100;
+    `
+    document.body.appendChild(this.scopeCanvas)
+    this.scopeCtx = this.scopeCanvas.getContext('2d')
+    this.updateScopeSize()
+    window.addEventListener('resize', () => this.updateScopeSize())
+  }
+
+  updateScopeSize() {
+    this.scopeCanvas.width  = window.innerWidth
+    this.scopeCanvas.height = window.innerHeight
+  }
+
+  drawScope() {
+    const ctx = this.scopeCtx
+    const w = this.scopeCanvas.width
+    const h = this.scopeCanvas.height
+    const cx = w / 2, cy = h / 2
+    const r  = Math.min(w, h) * 0.42   // scope circle radius
+
+    ctx.clearRect(0, 0, w, h)
+
+    // Black-out everything outside the scope circle
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.97)'
+    ctx.fillRect(0, 0, w, h)
+    ctx.globalCompositeOperation = 'destination-out'
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.globalCompositeOperation = 'source-over'
+
+    // Scope circle ring
+    ctx.strokeStyle = '#1a1a1a'
+    ctx.lineWidth = 6
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.stroke()
+
+    // Green tint inside circle (night vision look)
+    ctx.fillStyle = 'rgba(0, 20, 0, 0.12)'
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.fill()
+
+    // Mil-dot reticle
+    ctx.strokeStyle = 'rgba(0, 255, 0, 0.85)'
+    ctx.lineWidth = 1.2
+
+    // Main crosshair lines — with gap in center
+    const gap = 22, lineLen = r * 0.88
+    // Horizontal
+    ctx.beginPath(); ctx.moveTo(cx - lineLen, cy); ctx.lineTo(cx - gap, cy); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(cx + gap, cy);      ctx.lineTo(cx + lineLen, cy); ctx.stroke()
+    // Vertical
+    ctx.beginPath(); ctx.moveTo(cx, cy - lineLen); ctx.lineTo(cx, cy - gap); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(cx, cy + gap);      ctx.lineTo(cx, cy + lineLen); ctx.stroke()
+
+    // Mil dots along horizontal axis
+    const dotSpacing = r * 0.22
+    for (let i = -3; i <= 3; i++) {
+      if (i === 0) continue
+      ctx.beginPath()
+      ctx.arc(cx + i * dotSpacing, cy, 2.5, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    // Mil dots along vertical axis
+    for (let i = -2; i <= 2; i++) {
+      if (i === 0) continue
+      ctx.beginPath()
+      ctx.arc(cx, cy + i * dotSpacing, 2.5, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // Range finder stadia lines
+    ctx.lineWidth = 0.8
+    ctx.strokeStyle = 'rgba(0,255,0,0.5)'
+    const stadiaY = cy + r * 0.55
+    ctx.beginPath(); ctx.moveTo(cx - r*0.1, stadiaY); ctx.lineTo(cx + r*0.1, stadiaY); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(cx - r*0.05, stadiaY + 14); ctx.lineTo(cx + r*0.05, stadiaY + 14); ctx.stroke()
+
+    // Scope edge vignette — darker toward the metal ring
+    const grad = ctx.createRadialGradient(cx, cy, r*0.65, cx, cy, r)
+    grad.addColorStop(0, 'rgba(0,0,0,0)')
+    grad.addColorStop(1, 'rgba(0,0,0,0.7)')
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.fill()
+
+    // Scope sway (when not holding breath)
+    if (!this.holdingBreath) {
+      const swayX = Math.sin(this.swayTimer * 0.8) * 3.5
+      const swayY = Math.sin(this.swayTimer * 1.1) * 2.0
+      // Slight scope lens dust particles
+      ctx.fillStyle = 'rgba(255,255,255,0.03)'
+      for (let i = 0; i < 12; i++) {
+        const px = cx + Math.sin(i * 2.3 + this.swayTimer) * r * 0.3
+        const py = cy + Math.cos(i * 1.7 + this.swayTimer * 0.6) * r * 0.3
+        ctx.beginPath(); ctx.arc(px, py, 1.5, 0, Math.PI * 2); ctx.fill()
+      }
+    }
+  }
+
+  aimIn() {
+    this.isADS = true
+    this.scopeCanvas.style.display = 'block'
+    this.sound.play('scope_in')
+    // Hide the viewmodel while scoped
+    this.group.visible = false
+    // Narrow FOV to simulate zoom
+    this.targetFOV = 15
+  }
+
+  aimOut() {
+    this.isADS = false
+    this.scopeCanvas.style.display = 'none'
+    this.group.visible = true
+    this.sound.play('scope_out')
+    this.targetFOV = 75
+  }
+
+  shoot(onShoot) {
+    if (!this.canShoot) return
+    if (this.isReloading) return
+    if (this.ammo <= 0) { this.reload(); return }
+    const now = Date.now()
+    if (now - this.lastShotTime < this.fireRate) return
+
+    this.canShoot = false
+    this.lastShotTime = now
+    this.ammo--
+
+    this.sound.play('awp_fire')
+    this.animateRecoil()
+    this.animateBolt()
+    onShoot()
+
+    if (this.ammo <= 0 && this.reserveAmmo > 0) {
+      setTimeout(() => this.reload(), 400)
+    }
+
+    setTimeout(() => { this.canShoot = true }, this.fireRate)
+  }
+
+  animateRecoil() {
+    // Kick the viewmodel back and up
+    const start = { z: this.group.position.z, xRot: this.group.rotation.x }
+    let t = 0
+    const kick = (delta) => {
+      t += delta
+      if (t < 0.06) {
+        this.group.position.z = start.z + t / 0.06 * 0.1
+        this.group.rotation.x = start.xRot - t / 0.06 * 0.15
+      } else if (t < 0.35) {
+        const r = (t - 0.06) / 0.29
+        this.group.position.z = start.z + 0.1 * (1 - r)
+        this.group.rotation.x = start.xRot - 0.15 * (1 - r)
+      }
+    }
+    this.recoilAnim = kick  // called from update()
+  }
+
+  animateBolt() {
+    // Animate bolt handle: lift → pull back → push forward → close
+    this.boltAnimating = true
+    const boltSequence = [
+      { delay: 100, rotZ: 0.8 },     // lift bolt
+      { delay: 220, posZ: 0.04 },    // pull back
+      { delay: 400, posZ: 0.0 },     // push forward
+      { delay: 520, rotZ: 0.0 },     // close bolt
+    ]
+    boltSequence.forEach(({ delay, rotZ, posZ }) => {
+      setTimeout(() => {
+        if (rotZ !== undefined) this.boltGroup.rotation.z = rotZ
+        if (posZ !== undefined) this.boltGroup.children.forEach(c => c.position.z = (c.position.z > 0 ? posZ + 0.06 : posZ))
+        if (delay === 520) this.boltAnimating = false
+      }, delay)
+    })
+  }
+
+  reload() {
+    if (this.isReloading) return
+    if (this.reserveAmmo <= 0) return
+    if (this.ammo === this.maxAmmo) return
+    this.isReloading = true
+    this.sound.play('awp_reload')
+    setTimeout(() => {
+      const needed = this.maxAmmo - this.ammo
+      const take   = Math.min(needed, this.reserveAmmo)
+      this.ammo += take
+      this.reserveAmmo -= take
+      this.isReloading = false
+    }, this.reloadTime)
+  }
+
+  update(delta, camera) {
+    this.swayTimer += delta
+
+    // FOV transition
+    if (camera.fov !== this.targetFOV) {
+      camera.fov = THREE.MathUtils.lerp(camera.fov, this.targetFOV || 75, delta * 14)
+      camera.updateProjectionMatrix()
+    }
+
+    // Idle weapon sway (hip fire)
+    if (!this.isADS) {
+      this.group.position.x = 0.19 + Math.sin(this.swayTimer * 0.7) * 0.003
+      this.group.position.y = -0.22 + Math.sin(this.swayTimer * 1.2) * 0.002
+    }
+
+    // ADS scope sway
+    if (this.isADS) {
+      this.drawScope()
+    }
+
+    // Recoil animation step
+    if (this.recoilAnim) this.recoilAnim(delta)
+  }
+
+  getAmmoString() {
+    return `${this.ammo} / ${this.reserveAmmo}`
+  }
+}
+
+── HUD — ammo display ──
+
+Add to HUD bottom-right corner:
+  Large number = current ammo (e.g. "5")
+  Slash + reserve ammo (e.g. "/ 25")
+  Below: "AWP" weapon name in class color
+  If reloading: animated "RELOADING..." text with progress bar
+
+── Controls.js — wire ADS ──
+
+Right mouse button (mousedown button 2):  weapon.aimIn()
+Right mouse button (mouseup button 2):    weapon.aimOut()
+Left click (while ADS):                   weapon.shoot(onShoot)
+R key:                                    weapon.reload()
+Shift while ADS:                          this.holdingBreath = true (steady scope for 3s)
+
+ACCEPTANCE CRITERIA:
+✓ AWP model is visible bottom-right with all parts: barrel, scope, stock, bolt, bipod
+✓ Right-clicking zooms in, hides viewmodel, shows full scope overlay
+✓ Scope overlay has proper mil-dot reticle with green tint
+✓ Scope has natural sway that steadies when Shift is held
+✓ Left click fires: massive sound, recoil kick, bolt animation plays
+✓ Bolt animates the handle lifting, pulling back, pushing forward, closing
+✓ Ammo counts down, reload triggers at 0, reserve decreases
+✓ AWP cannot fire faster than 1.4 seconds between shots
+✓ FOV transitions smoothly between 75 (hip) and 15 (scoped)
