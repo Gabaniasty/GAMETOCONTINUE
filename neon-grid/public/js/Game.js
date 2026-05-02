@@ -21,10 +21,13 @@ export class Game {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
     this.renderer.autoClear         = false;
+    // Ensure the canvas is NEVER black — sky blue is always the fallback
+    this.renderer.setClearColor(0x4a9fcc, 1);
 
     // ── Main scene & camera ───────────────────────────────────────
     this.scene  = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x02020a);
+    // Start with sky blue immediately — MapLoader will refine lighting/fog
+    this.scene.background = new THREE.Color(0x4a9fcc);
 
     this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 200);
     this.camera.position.set(0, 1.65, 0);

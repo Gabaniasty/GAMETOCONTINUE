@@ -73,60 +73,52 @@ export class MapLoader {
 
   // ── Sky sphere + sun ───────────────────────────────────────────────────────
   _buildSky() {
-    // Daytime sky — visible when looking up
     const SKY_COLOR = 0x4a9fcc;
     this.scene.background = new THREE.Color(SKY_COLOR);
-    this.scene.fog        = new THREE.Fog(SKY_COLOR, 55, 160);
+    // Gentle fog — only hides things very far away (outer walls ~40 units)
+    this.scene.fog = new THREE.Fog(SKY_COLOR, 80, 200);
 
-    // Sky dome (inside of a large sphere)
+    // Sky dome — BackSide so interior is visible when looking up
     const skyGeo = new THREE.SphereGeometry(450, 32, 16);
     const skyMat = new THREE.MeshBasicMaterial({ color: SKY_COLOR, side: THREE.BackSide });
     this.scene.add(new THREE.Mesh(skyGeo, skyMat));
 
-    // Horizon haze band — slightly lighter ring near horizon
-    const hazeGeo = new THREE.CylinderGeometry(440, 440, 30, 32, 1, true);
-    const hazeMat = new THREE.MeshBasicMaterial({
-      color: 0x7ac5e0, side: THREE.BackSide, transparent: true, opacity: 0.55,
-    });
-    const haze = new THREE.Mesh(hazeGeo, hazeMat);
-    haze.position.y = -12;
-    this.scene.add(haze);
-
     // Sun disc
-    const sunGeo = new THREE.SphereGeometry(10, 20, 20);
-    const sunMat = new THREE.MeshBasicMaterial({ color: 0xfffbe0 });
-    const sun    = new THREE.Mesh(sunGeo, sunMat);
+    const sun = new THREE.Mesh(
+      new THREE.SphereGeometry(10, 20, 20),
+      new THREE.MeshBasicMaterial({ color: 0xfffbe0 }),
+    );
     sun.position.set(90, 200, -280);
     this.scene.add(sun);
 
-    // Sun glow (slightly larger, transparent yellow)
-    const glowGeo = new THREE.SphereGeometry(18, 20, 20);
-    const glowMat = new THREE.MeshBasicMaterial({
-      color: 0xffee88, transparent: true, opacity: 0.25,
-    });
-    const glow = new THREE.Mesh(glowGeo, glowMat);
+    // Sun glow ring
+    const glow = new THREE.Mesh(
+      new THREE.SphereGeometry(18, 20, 20),
+      new THREE.MeshBasicMaterial({ color: 0xffee88, transparent: true, opacity: 0.3 }),
+    );
     glow.position.copy(sun.position);
     this.scene.add(glow);
   }
 
   // ── Floor plane ────────────────────────────────────────────────────────────
   _buildFloor() {
-    // Main floor slab
-    const floorMat = new THREE.MeshBasicMaterial({ color: 0x101e2e });
+    // Clearly visible dark-teal floor (not black)
+    const floorMat = new THREE.MeshBasicMaterial({ color: 0x0e2233 });
     const floor    = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), floorMat);
     floor.rotation.x = -Math.PI / 2;
     this.scene.add(floor);
 
-    // Neon grid overlay on the floor
-    const grid = new THREE.GridHelper(80, 40, 0x00f5ff, 0x00293d);
+    // Neon grid — bright cyan lines on the floor
+    const grid = new THREE.GridHelper(80, 40, 0x00f5ff, 0x004455);
     grid.material.transparent = true;
-    grid.material.opacity     = 0.35;
+    grid.material.opacity     = 0.6;
     this.scene.add(grid);
   }
 
   // ── Arena blocks from AABBs ────────────────────────────────────────────────
   _buildArenaBlocks() {
-    const wallMat = new THREE.MeshBasicMaterial({ color: 0x0d1e30 });
+    // Clearly visible steel-blue wall color (NOT dark/black)
+    const wallMat = new THREE.MeshBasicMaterial({ color: 0x1a3a52 });
 
     ARENA_AABBS.forEach((box) => {
       const w = box.maxX - box.minX;
@@ -142,9 +134,9 @@ export class MapLoader {
       );
       mesh.userData.isMapGeometry = true;
 
-      // Neon cyan edge outlines — always visible, no lighting needed
-      const edges    = new THREE.EdgesGeometry(geo);
-      const lineMat  = new THREE.LineBasicMaterial({ color: 0x00f5ff, transparent: true, opacity: 0.75 });
+      // Fully-opaque neon cyan edge outlines — always crisp and visible
+      const edges   = new THREE.EdgesGeometry(geo);
+      const lineMat = new THREE.LineBasicMaterial({ color: 0x00f5ff });
       mesh.add(new THREE.LineSegments(edges, lineMat));
 
       this.scene.add(mesh);
