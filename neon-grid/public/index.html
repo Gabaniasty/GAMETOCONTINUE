@@ -665,7 +665,7 @@ async function updateUI() {
   const token = auth.getToken ? auth.getToken() : localStorage.getItem('ng_token');
   if (!token) return;
   try {
-    const res = await fetch('/api/auth/me', {
+    const res = await fetch('/auth/me', {
       headers: { Authorization: 'Bearer ' + token }
     });
     if (!res.ok) return;
@@ -683,12 +683,12 @@ async function updateUI() {
 
 updateUI();
 
-// ── Server status (poll /api/status) ─────────────────────────
+// ── Server status (poll /status) ─────────────────────────────
 async function pollStatus() {
   const dot  = document.getElementById('status-dot');
   const text = document.getElementById('status-text');
   try {
-    const res = await fetch('/api/status');
+    const res = await fetch('/status');
     if (!res.ok) throw new Error();
     const data = await res.json();
     const count = data.players ?? data.playerCount ?? data.online ?? '—';

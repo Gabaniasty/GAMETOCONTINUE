@@ -398,7 +398,7 @@ async function loadPlayerData() {
   const token = auth.getToken();
   if (!token) return;
   try {
-    const res = await fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + token } });
+    const res = await fetch('/auth/me', { headers: { Authorization: 'Bearer ' + token } });
     if (!res.ok) return;
     const { username, userId, stats, rank } = await res.json();
 
@@ -439,7 +439,7 @@ async function loadPlayerData() {
 
 async function loadHistory(token) {
   try {
-    const res  = await fetch('/api/auth/match-history?limit=5', {
+    const res  = await fetch('/auth/match-history?limit=5', {
       headers: { Authorization: 'Bearer ' + token },
     });
     if (!res.ok) return;

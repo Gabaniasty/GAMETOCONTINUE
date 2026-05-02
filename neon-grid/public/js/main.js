@@ -54,10 +54,11 @@ network._socket.on('connect', () => {
 });
 
 // ── Shared shoot helper (fires raycast + network notify) ─────────────
-// Headshot detection: player sphere center is at ~y=0.8 for standing players
-// (eye level 1.65 - offset 0.85). Upper ~30% of sphere radius 0.7 → threshold 1.1.
-let _lastShotWasHeadshot  = false;
+// Headshot detection is now server-authoritative via hitZone from dual hitboxes.
 let _pendingKillIsHeadshot = false;
+// Pending server confirmation for predicted hit marker
+let _pendingConfirmTimer   = null;
+let _pendingConfirmDone    = false;
 
 function _doFireShot() {
   const origin = {
@@ -74,19 +75,25 @@ function _doFireShot() {
 
   const result = bullets.shoot(origin, direction, game.camera, barrelWorld);
   if (result.type === 'player') {
-    // Headshot: hit point is in the upper half of the player's sphere hitbox.
-    // Sphere center is at (targetY - 0.85); threshold is center + 0.1 (upper 57% of radius 0.7).
-    if (result.hitPoint) {
-      const target      = network.getRemotePlayers().find(p => p.id === result.playerId);
-      const targetEyeY  = target ? (target.y || 1.65) : 1.65;
-      const sphereCenter = targetEyeY - 0.85;
-      _lastShotWasHeadshot = result.hitPoint.y > sphereCenter + 0.1;
-    } else {
-      _lastShotWasHeadshot = false;
-    }
-    network.sendShoot(origin, direction, result.playerId, result.distance);
-  } else {
-    _lastShotWasHeadshot = false;
+    // ── Predicted hit marker: show immediately, revert if server rejects ──
+    hud.showHitMarker(false, false);        // instant feedback (no HS info yet)
+    _pendingConfirmDone = false;
+    clearTimeout(_pendingConfirmTimer);
+    _pendingConfirmTimer = setTimeout(() => {
+      // Server did not confirm within 350 ms — revert crosshair spread
+      if (!_pendingConfirmDone) {
+        const ch = document.getElementById('crosshair');
+        if (ch) ch.style.setProperty('--ch-gap', '4px');
+        const arms = document.querySelectorAll('#crosshair .ch-arm');
+        arms.forEach(arm => {
+          arm.style.background = 'rgba(255,255,255,0.75)';
+          arm.style.boxShadow  = 'none';
+          arm.style.transition = 'background .08s, box-shadow .08s';
+        });
+      }
+    }, 350);
+
+    network.sendShoot(origin, direction, result.playerId, result.distance, result.hitZone);
   }
 }
 
@@ -122,13 +129,15 @@ if (localClass === 'WRAITH' && game._awpWeapon) {
 
 // ── Combat callbacks ───────────────────────────────────────────────
 
-network.onHit = ({ targetId, damage, newHp }) => {
-  const isHeadshot = _lastShotWasHeadshot;
-  const isLethal   = newHp <= 0;
-  _lastShotWasHeadshot = false;
+network.onHit = ({ targetId, damage, newHp, isHeadshot }) => {
+  const isLethal = newHp <= 0;
+
+  // Server confirmed — cancel pending revert timer, then show confirmed marker
+  _pendingConfirmDone = true;
+  clearTimeout(_pendingConfirmTimer);
 
   hud.flashHit();
-  hud.showHitMarker(false);
+  hud.showHitMarker(false, isHeadshot);
   hud.showDamageNumber(damage);
 
   if (isHeadshot) {
@@ -137,32 +146,46 @@ network.onHit = ({ targetId, damage, newHp }) => {
     sound.play_hit_confirm();
   }
 
-  // Remember if this lethal hit was a headshot so onKilled can show the skull
+  // Remember for kill event — server may send onKilled before or after
   if (isLethal) {
-    _pendingKillIsHeadshot = isHeadshot;
+    _pendingKillIsHeadshot = !!isHeadshot;
   }
 
   const remote = network.getRemotePlayers().find(p => p.id === targetId);
   if (remote) {
     const hitPos = { x: remote.x, y: remote.y, z: remote.z };
-    game.spawnHitParticles(hitPos);
-    bullets.onHit(hitPos);
+    bullets.onHit(hitPos, !!isHeadshot);
   }
 };
 
-network.onDamaged = ({ shooterId, damage, newHp }) => {
+network.onDamaged = ({ shooterId, damage, newHp, isHeadshot }) => {
   hud.setHp(newHp, maxHp);
   sound.play_take_damage();
+  hud.showDamageVignette();
+
+  // Directional indicator: compute angle from player's facing toward the shooter
+  const shooter = network.getRemotePlayers().find(p => p.id === shooterId);
+  if (shooter) {
+    const dx    = shooter.x - game.camera.position.x;
+    const dz    = shooter.z - game.camera.position.z;
+    const camY  = game.camera.rotation.y;
+    const fwdX  = -Math.sin(camY);
+    const fwdZ  = -Math.cos(camY);
+    const cross = fwdX * dz - fwdZ * dx;
+    const dot   = fwdX * dx + fwdZ * dz;
+    const angleDeg = Math.atan2(cross, dot) * 180 / Math.PI;
+    hud.showDirectionalIndicator(angleDeg);
+  }
 };
 
-network.onKilled = ({ killerId, killerName, victimId, victimName, killerClass, killerRp = 0 }) => {
-  hud.showKill(killerName, victimName);
+network.onKilled = ({ killerId, killerName, victimId, victimName, killerClass, killerRp = 0, isHeadshot = false, weaponName = '' }) => {
+  hud.showKill(killerName, victimName, { isHeadshot, weaponName, killerClass, killerRp });
   const localId = network.getLocalId();
 
   if (killerId === localId) {
     hud.showKillNotification();
-    // Skull/yellow flash only for headshot kills; regular flash for body-shot kills
-    hud.showHitMarker(_pendingKillIsHeadshot);
+    const wasHeadshot = _pendingKillIsHeadshot || isHeadshot;
+    hud.showHitMarker(true, wasHeadshot);
     _pendingKillIsHeadshot = false;
     sound.play_kill();
   }

@@ -363,7 +363,7 @@ class GameServer {
       });
 
       // ── Shoot handler ────────────────────────────────────────────
-      socket.on('player:shoot', ({ origin, direction, weaponClass, targetId, distance }) => {
+      socket.on('player:shoot', ({ origin, direction, weaponClass, targetId, distance, hitZone }) => {
         // No damage outside an active round
         if (this.gameState !== 'playing') return;
 
@@ -375,7 +375,7 @@ class GameServer {
         const target = this.players.get(targetId);
         if (!target || target.dead || target.spawnProtection) return;
 
-        if (distance > 250) return;
+        if (distance > 300) return;
 
         const posDiff = Math.sqrt(
           (shooter.x - origin.x) ** 2 +
@@ -384,7 +384,13 @@ class GameServer {
         );
         if (posDiff > 6) return;
 
-        const targetCenter = { x: target.x, y: target.y + 0.8, z: target.z };
+        // LOS check toward the claimed hit zone center
+        const isHead = hitZone === 'head';
+        const targetCenter = {
+          x: target.x,
+          y: isHead ? (target.y - 0.10) : (target.y - 0.95),
+          z: target.z,
+        };
         if (!this.isLineClearOfWalls(origin, targetCenter)) return;
 
         const toTarget = {
@@ -396,20 +402,27 @@ class GameServer {
         const dot = (toTarget.x / len) * direction.x +
                     (toTarget.y / len) * direction.y +
                     (toTarget.z / len) * direction.z;
-        if (dot < 0.85) return;
+        if (dot < 0.82) return;
 
         shooter.isShooting = true;
         setTimeout(() => { if (this.players.has(socket.id)) this.players.get(socket.id).isShooting = false; }, 200);
 
-        const damage = (CLASSES[weaponClass || shooter.class] || CLASSES.SOLDIER).damage;
-        target.hp    = Math.max(0, target.hp - damage);
+        // AWP/WRAITH headshots deal 237, body shots 95; other classes use base damage
+        const cls = CLASSES[weaponClass || shooter.class] || CLASSES.SOLDIER;
+        let damage;
+        if ((weaponClass || shooter.class) === 'WRAITH') {
+          damage = isHead ? 237 : 95;
+        } else {
+          damage = cls.damage;
+        }
+        target.hp = Math.max(0, target.hp - damage);
 
-        socket.emit('player:hit', { targetId, damage, newHp: target.hp });
+        socket.emit('shot:confirmed', { targetId, damage, newHp: target.hp, isHeadshot: isHead });
 
         const targetSocket = this.io.sockets.sockets.get(targetId);
         if (targetSocket) {
           targetSocket.emit('player:damaged', {
-            shooterId: socket.id, damage, newHp: target.hp,
+            shooterId: socket.id, damage, newHp: target.hp, isHeadshot: isHead,
             hitPos: { x: target.x, y: target.y, z: target.z },
           });
         }
@@ -419,11 +432,16 @@ class GameServer {
           target.deaths++;
           shooter.kills++;
 
+          const weaponName = (weaponClass || shooter.class) === 'WRAITH' ? 'AWP'
+            : (weaponClass || shooter.class) === 'GHOST' ? 'SMG' : 'AK47';
+
           this.io.emit('player:killed', {
             killerId:    socket.id,   killerName:  shooter.username,
             victimId:    targetId,    victimName:  target.username,
             killerClass: shooter.class,
             killerRp:    shooter.rankPoints || 0,
+            isHeadshot:  isHead,
+            weaponName,
           });
 
           // ── Kill-streak & announcement logic ─────────────────

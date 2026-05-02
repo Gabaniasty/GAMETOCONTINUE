@@ -117,7 +117,33 @@ export class Hud {
     this._buildKillNotif(root);
     this._buildDeathScreen(root);
     this._buildScoreboard(root);
+    this._buildDamageOverlays(root);
     this._listenAnnouncements();
+  }
+
+  // ── Damage vignette + directional indicator ──────────────────────────
+  _buildDamageOverlays(root) {
+    const vignette = this._el.vignette = document.createElement('div');
+    vignette.style.cssText = `
+      position:absolute; inset:0; pointer-events:none; z-index:10;
+      background:radial-gradient(ellipse at center, transparent 40%, rgba(220,20,20,0.72) 100%);
+      opacity:0; transition:opacity 0.08s ease-in;
+    `;
+    root.appendChild(vignette);
+
+    const dir = this._el.dirArrow = document.createElement('div');
+    dir.style.cssText = `
+      position:absolute; top:50%; left:50%;
+      width:0; height:0;
+      border-left:7px solid transparent;
+      border-right:7px solid transparent;
+      border-bottom:18px solid rgba(255,40,40,0.9);
+      transform:translate(-50%,-50%) rotate(0deg) translateY(-38vh);
+      opacity:0; pointer-events:none; z-index:15;
+      filter:drop-shadow(0 0 5px rgba(255,40,40,0.7));
+      transition:opacity 0.12s ease-in;
+    `;
+    root.appendChild(dir);
   }
 
   // ── Top-center: match timer + team score ─────────────────────────────
@@ -517,31 +543,79 @@ export class Hud {
     }, 120);
   }
 
-  showKill(killerName, victimName) {
+  showKill(killerName, victimName, opts = {}) {
+    const { isHeadshot = false, weaponName = '', killerClass = '', killerRp = 0 } = opts;
     const feed = this._el.killFeed;
+
+    const CC = { SOLDIER: '#00f5ff', GHOST: '#ff2d78', WRAITH: '#7b2fff' };
+    const killerColor = CC[killerClass] || '#00f5ff';
+    // Border uses rank color when available, falling back to class color
+    const rankEntry  = getRankFromRP(killerRp);
+    const borderColor = rankEntry ? rankEntry.color : (CC[killerClass] || 'rgba(0,245,255,0.18)');
+
+    const weaponLabel = weaponName ? `<span style="color:rgba(200,200,255,.3);margin:0 4px">[${weaponName}]</span>` : '';
+    const hsBadge = isHeadshot
+      ? `<span style="color:#ffdd00;margin-left:5px;text-shadow:0 0 6px #ffdd00;font-size:.62rem">&#9760; HS</span>`
+      : '';
+
     const item = document.createElement('div');
     item.style.cssText = `
-      background:rgba(8,8,20,0.88); border:1px solid rgba(0,245,255,0.18);
+      background:rgba(8,8,20,0.88);
+      border:1px solid rgba(0,245,255,0.14);
+      border-left:2px solid ${borderColor};
       backdrop-filter:blur(4px); padding:4px 10px;
-      font-size:.58rem; letter-spacing:.1em; color:#e0e0ff;
+      font-size:.56rem; letter-spacing:.1em; color:#e0e0ff;
       opacity:1; transition:opacity 1s; white-space:nowrap;
       animation:kf-slide-in .22s ease-out;
     `;
     item.innerHTML =
-      `<span style="color:#00f5ff">${killerName}</span>` +
-      `<span style="color:rgba(224,224,255,.3)"> fragged </span>` +
-      `<span style="color:#ff2d78">${victimName}</span>`;
+      `<span style="color:${killerColor}">${killerName}</span>` +
+      weaponLabel +
+      `<span style="color:rgba(224,224,255,.28)">›</span>` +
+      `<span style="color:#ff2d78;margin-left:4px">${victimName}</span>` +
+      hsBadge;
+
     feed.appendChild(item);
     this._killFeedItems.push(item);
-    while (this._killFeedItems.length > 5) feed.removeChild(this._killFeedItems.shift());
+    while (this._killFeedItems.length > 6) feed.removeChild(this._killFeedItems.shift());
+
     setTimeout(() => {
+      item.style.transition = 'opacity 1.2s';
       item.style.opacity = '0';
       setTimeout(() => {
         if (item.parentNode) feed.removeChild(item);
         const idx = this._killFeedItems.indexOf(item);
         if (idx !== -1) this._killFeedItems.splice(idx, 1);
-      }, 1000);
-    }, 5000);
+      }, 1200);
+    }, 8000);
+  }
+
+  // ── Damage vignette ──────────────────────────────────────────────────
+  showDamageVignette() {
+    const v = this._el.vignette;
+    if (!v) return;
+    clearTimeout(this._vignetteTimer);
+    v.style.transition = 'opacity 0.06s ease-in';
+    v.style.opacity = '1';
+    this._vignetteTimer = setTimeout(() => {
+      v.style.transition = 'opacity 0.55s ease-out';
+      v.style.opacity = '0';
+    }, 90);
+  }
+
+  // ── Directional damage indicator ──────────────────────────────────────
+  // angleDeg: 0=front, 90=right, ±180=behind, -90=left
+  showDirectionalIndicator(angleDeg) {
+    const arrow = this._el.dirArrow;
+    if (!arrow) return;
+    clearTimeout(this._dirTimer);
+    arrow.style.transition = 'opacity 0.12s ease-in';
+    arrow.style.transform  = `translate(-50%,-50%) rotate(${angleDeg}deg) translateY(-38vh)`;
+    arrow.style.opacity    = '1';
+    this._dirTimer = setTimeout(() => {
+      arrow.style.transition = 'opacity 0.8s ease-out';
+      arrow.style.opacity    = '0';
+    }, 1400);
   }
 
   showKillNotification() {
@@ -609,34 +683,30 @@ export class Hud {
     }
   }
 
-  // Hit marker — updated for 4-arm crosshair
-  showHitMarker(isKill = false) {
+  // Hit marker — isKill=true shows kill flash, isHeadshot=true shows skull + yellow
+  showHitMarker(isKill = false, isHeadshot = false) {
     const arms = document.querySelectorAll('#crosshair .ch-arm');
     if (!arms.length) return;
 
-    const col = isKill ? '#ffff00' : '#ff4000';
-    const dur = isKill ? 300 : 150;
+    const col = isHeadshot ? '#ffdd00' : (isKill ? '#ffff00' : '#ff4000');
+    const dur = (isKill || isHeadshot) ? 300 : 150;
 
     arms.forEach(arm => {
-      arm.style.background   = col;
-      arm.style.boxShadow    = `0 0 6px ${col}`;
-      arm.style.transition   = 'none';
+      arm.style.background = col;
+      arm.style.boxShadow  = `0 0 6px ${col}`;
+      arm.style.transition = 'none';
     });
 
-    // Spread
     const ch = document.getElementById('crosshair');
-    if (ch) {
-      ch.style.setProperty('--ch-gap', '10px');
-    }
+    if (ch) ch.style.setProperty('--ch-gap', '10px');
 
-    if (isKill) {
-      // Skull flash
+    if (isKill || isHeadshot) {
       const skull = document.createElement('div');
-      skull.textContent = '☠';
+      skull.textContent = isHeadshot ? '☠' : '✕';
       skull.style.cssText = `
         position:fixed; top:50%; left:50%;
-        font-size:1.8rem; color:#ffff00;
-        text-shadow:0 0 14px #ffff00;
+        font-size:1.8rem; color:${col};
+        text-shadow:0 0 14px ${col};
         pointer-events:none; z-index:300;
         animation:skull-pop 300ms ease-out forwards;
       `;

@@ -212,7 +212,7 @@
 
     async function loadLeaderboard() {
       try {
-        const res  = await fetch('/api/auth/leaderboard');
+        const res  = await fetch('/auth/leaderboard');
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const rows = await res.json();
 

@@ -1,210 +1,214 @@
 export class BulletSystem {
   constructor(scene) {
-    this._scene              = scene;
-    this._bullets            = [];
-    this._impacts            = [];
-    this.collidableMeshes    = [];
-    this._playerHitboxes     = new Map(); // playerId → THREE.Mesh
+    this._scene           = scene;
+    this._bullets         = [];
+    this._impacts         = [];
+    this.collidableMeshes = [];
+    this._playerHitboxes  = new Map(); // playerId → { head: Mesh, body: Mesh }
   }
 
-  // ── Called by main.js after map loads ────────────────────────────────
   setCollidableMeshes(meshes) { this.collidableMeshes = meshes; }
 
-  // ── Keep hitbox spheres in sync with remote players ──────────────────
+  // ── Keep dual hitboxes in sync with remote players ────────────────────
   updatePlayerHitboxes(remotePlayers) {
     const seen = new Set();
     for (const p of remotePlayers) {
       if (!p.id) continue;
       seen.add(p.id);
-      let mesh = this._playerHitboxes.get(p.id);
-      if (!mesh) {
-        const geo = new THREE.SphereGeometry(0.7, 8, 8);
-        const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-        mesh = new THREE.Mesh(geo, mat);
-        mesh.userData.isPlayerHitbox = true;
-        mesh.userData.playerId       = p.id;
-        this._scene.add(mesh);
-        this._playerHitboxes.set(p.id, mesh);
+      let pair = this._playerHitboxes.get(p.id);
+      if (!pair) {
+        // HEAD — small sphere at eye level
+        const headGeo = new THREE.SphereGeometry(0.25, 6, 6);
+        const headMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+        const head    = new THREE.Mesh(headGeo, headMat);
+        head.userData.isHitbox = true;
+        head.userData.hitZone  = 'head';
+        head.userData.playerId       = p.id;
+        this._scene.add(head);
+
+        // BODY — box covering torso + legs
+        const bodyGeo = new THREE.BoxGeometry(0.65, 1.4, 0.55);
+        const bodyMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+        const body    = new THREE.Mesh(bodyGeo, bodyMat);
+        body.userData.isHitbox = true;
+        body.userData.hitZone  = 'body';
+        body.userData.playerId       = p.id;
+        this._scene.add(body);
+
+        pair = { head, body };
+        this._playerHitboxes.set(p.id, pair);
       }
-      mesh.position.set(p.x, (p.y || 1.65) - 0.85, p.z);
-      mesh.visible = !p.dead;
+
+      // p.y is camera/eye height (~1.65 above floor when standing)
+      const eyeY = p.y || 1.65;
+      pair.head.position.set(p.x, eyeY - 0.10, p.z); // ~1.55 above floor
+      pair.body.position.set(p.x, eyeY - 0.95, p.z); // ~0.70 above floor
+      pair.head.visible = !p.dead;
+      pair.body.visible = !p.dead;
     }
     // Remove disconnected players
-    for (const [id, mesh] of this._playerHitboxes) {
+    for (const [id, pair] of this._playerHitboxes) {
       if (!seen.has(id)) {
-        this._scene.remove(mesh);
+        this._scene.remove(pair.head);
+        this._scene.remove(pair.body);
         this._playerHitboxes.delete(id);
       }
     }
   }
 
-  // ── Main shoot entry-point (replaces old spawnBullet) ────────────────
-  // Returns: { type: 'wall'|'player'|'miss', playerId?, distance? }
-  // barrelPos: optional THREE.Vector3 world position of the barrel tip for visual spawn
+  // Flat list of all hitbox meshes for raycasting
+  _getHitboxMeshes() {
+    const out = [];
+    for (const pair of this._playerHitboxes.values()) {
+      out.push(pair.head, pair.body);
+    }
+    return out;
+  }
+
+  // ── Main shoot entry-point ────────────────────────────────────────────
+  // Returns: { type: 'wall'|'player'|'miss', playerId?, hitZone?, distance?, hitPoint? }
   shoot(origin, direction, camera, barrelPos = null) {
     const originVec = new THREE.Vector3(origin.x, origin.y, origin.z);
     const dirVec    = new THREE.Vector3(direction.x, direction.y, direction.z).normalize();
 
-    // Gather all testable targets
+    const spawnFrom  = barrelPos || originVec;
     const wallTargets   = this.collidableMeshes;
-    const playerTargets = Array.from(this._playerHitboxes.values()).filter(m => m.visible);
+    const playerTargets = this._getHitboxMeshes().filter(m => m.visible);
     const allTargets    = [...wallTargets, ...playerTargets];
 
     if (allTargets.length === 0) {
-      this._spawnTravelingBullet(originVec, dirVec, camera, 200, barrelPos);
+      const endPt = originVec.clone().addScaledVector(dirVec, 300);
+      this._spawnTracer(spawnFrom, endPt);
       return { type: 'miss' };
     }
 
-    const raycaster = new THREE.Raycaster(originVec.clone(), dirVec.clone(), 0, 200);
+    const raycaster = new THREE.Raycaster(originVec.clone(), dirVec.clone(), 0, 300);
     const hits      = raycaster.intersectObjects(allTargets, false);
 
     if (hits.length === 0) {
-      this._spawnTravelingBullet(originVec, dirVec, camera, 200, barrelPos);
+      const endPt = originVec.clone().addScaledVector(dirVec, 300);
+      this._spawnTracer(spawnFrom, endPt);
       return { type: 'miss' };
     }
 
     const first = hits[0];
 
     if (first.object.userData.isMapGeometry) {
-      this._spawnTravelingBullet(originVec, dirVec, camera, first.distance, barrelPos);
+      this._spawnTracer(spawnFrom, first.point);
       this._spawnWallImpact(first.point);
       return { type: 'wall', point: first.point };
     }
 
-    if (first.object.userData.isPlayerHitbox) {
-      this._spawnTravelingBullet(originVec, dirVec, camera, first.distance, barrelPos);
+    if (first.object.userData.isHitbox) {
+      this._spawnTracer(spawnFrom, first.point);
       return {
         type:     'player',
         playerId: first.object.userData.playerId,
+        hitZone:  first.object.userData.hitZone,
         distance: first.distance,
         hitPoint: first.point,
       };
     }
 
-    this._spawnTravelingBullet(originVec, dirVec, camera, 200, barrelPos);
+    const endPt = originVec.clone().addScaledVector(dirVec, 300);
+    this._spawnTracer(spawnFrom, endPt);
     return { type: 'miss' };
   }
 
-  // ── Traveling bullet visual ───────────────────────────────────────────
-  _spawnTravelingBullet(originVec, dirVec, camera, maxDist, barrelPos = null) {
-    let spawnPos;
-    if (barrelPos) {
-      // Use the actual barrel tip world position
-      spawnPos = barrelPos.clone();
-    } else {
-      // Fallback: estimate spawn from camera with weapon-side offset
-      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-      const up    = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
-      spawnPos = originVec.clone()
-        .addScaledVector(dirVec, 0.4)
-        .addScaledVector(right,  0.15)
-        .addScaledVector(up,    -0.1);
-    }
+  // ── Instant 3-layer line tracer (fades in 120 ms) ─────────────────────
+  _spawnTracer(from, to) {
+    const a = from instanceof THREE.Vector3 ? from : new THREE.Vector3(from.x, from.y, from.z);
+    const b = to   instanceof THREE.Vector3 ? to   : new THREE.Vector3(to.x,   to.y,   to.z);
 
-    const cylGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.18, 6);
-    const mesh   = new THREE.Mesh(cylGeo, new THREE.MeshBasicMaterial({ color: 0x88ffff }));
-    mesh.rotation.x = Math.PI / 2;
+    const makeGeo = () => {
+      const geo = new THREE.BufferGeometry();
+      const arr = new Float32Array([a.x, a.y, a.z, b.x, b.y, b.z]);
+      geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+      return geo;
+    };
 
-    const group = new THREE.Group();
-    group.add(mesh);
-    group.position.copy(spawnPos);
-    group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dirVec);
-    this._scene.add(group);
+    const core  = new THREE.Line(makeGeo(),
+      new THREE.LineBasicMaterial({ color: 0xffee88, transparent: true, opacity: 1 }));
+    const mid   = new THREE.Line(makeGeo(),
+      new THREE.LineBasicMaterial({ color: 0xffee88, transparent: true, opacity: 0.55 }));
+    const outer = new THREE.Line(makeGeo(),
+      new THREE.LineBasicMaterial({ color: 0xffee88, transparent: true, opacity: 0.22 }));
 
-    // Trail
-    const tPos = new Float32Array(6 * 3);
-    for (let i = 0; i < 18; i++) tPos[i] = spawnPos.toArray()[i % 3];
-    const tGeo = new THREE.BufferGeometry();
-    tGeo.setAttribute('position', new THREE.BufferAttribute(tPos, 3));
-    tGeo.setDrawRange(0, 1);
-    const trail = new THREE.Line(
-      tGeo,
-      new THREE.LineBasicMaterial({ color: 0x00f5ff, transparent: true, opacity: 0.7 })
-    );
-    this._scene.add(trail);
+    this._scene.add(core);
+    this._scene.add(mid);
+    this._scene.add(outer);
 
     this._bullets.push({
-      group, trail, tPos,
-      history: [spawnPos.clone()],
-      cylGeo,
-      dir:          dirVec.clone(),
-      speed:        60,
-      lifetime:     0.6,
-      maxDist,
-      traveledDist: 0,
+      lines:       [core, mid, outer],
+      geos:        [core.geometry, mid.geometry, outer.geometry],
+      lifetime:    0.12,
+      maxLifetime: 0.12,
     });
   }
 
-  // ── Wall spark impact ─────────────────────────────────────────────────
+  // ── Wall spark impact — 8 particles + point light ─────────────────────
   _spawnWallImpact(point) {
-    for (let i = 0; i < 6; i++) {
-      const geo  = new THREE.BoxGeometry(0.04, 0.04, 0.04);
-      const mat  = new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true });
-      const mesh = new THREE.Mesh(geo, mat);
+    for (let i = 0; i < 8; i++) {
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.03, 4, 4),
+        new THREE.MeshBasicMaterial({ color: 0xffaa33, transparent: true })
+      );
       mesh.position.copy(point);
       const vel = new THREE.Vector3(
-        (Math.random() - 0.5) * 4,
-        Math.random() * 2 + 0.5,
-        (Math.random() - 0.5) * 4
+        (Math.random() - 0.5) * 5,
+        Math.random() * 3 + 0.5,
+        (Math.random() - 0.5) * 5
       );
       this._scene.add(mesh);
-      this._impacts.push({ mesh, vel, ttl: 0.25, maxTtl: 0.25 });
+      this._impacts.push({ mesh, vel, ttl: 0.30, maxTtl: 0.30 });
     }
-    const light = new THREE.PointLight(0xffaa00, 4, 1.5);
+    const light = new THREE.PointLight(0xffaa33, 6, 2);
+    light.userData.initIntensity = 6;
     light.position.copy(point);
+    this._scene.add(light);
+    this._impacts.push({ mesh: light, vel: null, ttl: 0.12, maxTtl: 0.12 });
+  }
+
+  // ── Player hit burst — 12 particles + point light ─────────────────────
+  onHit(position, isHeadshot = false) {
+    const pos   = new THREE.Vector3(position.x, position.y, position.z);
+    const color = isHeadshot ? 0xffdd00 : 0xff2d78;
+    for (let i = 0; i < 12; i++) {
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.04, 4, 4),
+        new THREE.MeshBasicMaterial({ color, transparent: true })
+      );
+      mesh.position.copy(pos);
+      const vel = new THREE.Vector3(
+        (Math.random() - 0.5) * 10,
+        Math.random() * 6 + 1,
+        (Math.random() - 0.5) * 10
+      );
+      this._scene.add(mesh);
+      this._impacts.push({ mesh, vel, ttl: 0.40, maxTtl: 0.40 });
+    }
+    const lightColor = isHeadshot ? 0xffdd00 : 0xff2d78;
+    const light = new THREE.PointLight(lightColor, 12, 4);
+    light.userData.initIntensity = 12;
+    light.position.copy(pos);
     this._scene.add(light);
     this._impacts.push({ mesh: light, vel: null, ttl: 0.15, maxTtl: 0.15 });
   }
 
-  // ── Player hit pink burst (called from network.onHit) ─────────────────
-  onHit(position) {
-    const pos = new THREE.Vector3(position.x, position.y, position.z);
-    for (let i = 0; i < 6; i++) {
-      const mesh = new THREE.Mesh(
-        new THREE.SphereGeometry(0.04, 4, 4),
-        new THREE.MeshBasicMaterial({ color: 0xff2d78, transparent: true })
-      );
-      mesh.position.copy(pos);
-      const vel = new THREE.Vector3(
-        (Math.random() - 0.5) * 8,
-        Math.random() * 5 + 1,
-        (Math.random() - 0.5) * 8,
-      );
-      this._scene.add(mesh);
-      this._impacts.push({ mesh, vel, ttl: 0.3, maxTtl: 0.3 });
-    }
-    const light = new THREE.PointLight(0xff2d78, 10, 3);
-    light.position.copy(pos);
-    this._scene.add(light);
-    this._impacts.push({ mesh: light, vel: null, ttl: 0.2, maxTtl: 0.2 });
-  }
-
   update(dt) {
-    // ── Bullets ──────────────────────────────────────────────────────
+    // ── Tracers ───────────────────────────────────────────────────────
     for (let i = this._bullets.length - 1; i >= 0; i--) {
       const b = this._bullets[i];
-      b.lifetime     -= dt;
-      b.traveledDist += b.speed * dt;
-
-      if (b.lifetime <= 0 || b.traveledDist >= b.maxDist) {
-        this._killBullet(i);
-        continue;
+      b.lifetime -= dt;
+      const t = Math.max(0, b.lifetime / b.maxLifetime);
+      b.lines[0].material.opacity = t;
+      b.lines[1].material.opacity = t * 0.55;
+      if (b.lines[2]) b.lines[2].material.opacity = t * 0.22;
+      if (b.lifetime <= 0) {
+        b.lines.forEach(l => { this._scene.remove(l); l.material.dispose(); });
+        b.geos.forEach(g => g.dispose());
+        this._bullets.splice(i, 1);
       }
-
-      b.group.position.addScaledVector(b.dir, b.speed * dt);
-
-      b.history.unshift(b.group.position.clone());
-      if (b.history.length > 6) b.history.pop();
-
-      const h = b.history;
-      for (let j = 0; j < 6; j++) {
-        const src = h[j] || h[h.length - 1];
-        b.tPos[j * 3]     = src.x;
-        b.tPos[j * 3 + 1] = src.y;
-        b.tPos[j * 3 + 2] = src.z;
-      }
-      b.trail.geometry.attributes.position.needsUpdate = true;
-      b.trail.geometry.setDrawRange(0, h.length);
     }
 
     // ── Impact particles / lights ─────────────────────────────────────
@@ -213,7 +217,7 @@ export class BulletSystem {
       obj.ttl -= dt;
       if (obj.vel) {
         obj.mesh.position.addScaledVector(obj.vel, dt);
-        obj.vel.y -= 10 * dt;
+        obj.vel.y -= 12 * dt;
         obj.mesh.material.opacity = Math.max(0, obj.ttl / obj.maxTtl);
       } else {
         obj.mesh.intensity = Math.max(0, (obj.ttl / obj.maxTtl) * (obj.mesh.userData.initIntensity || 10));
@@ -223,14 +227,5 @@ export class BulletSystem {
         this._impacts.splice(i, 1);
       }
     }
-  }
-
-  _killBullet(i) {
-    const b = this._bullets[i];
-    this._scene.remove(b.group);
-    this._scene.remove(b.trail);
-    b.cylGeo.dispose();
-    b.trail.geometry.dispose();
-    this._bullets.splice(i, 1);
   }
 }

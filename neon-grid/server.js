@@ -17,11 +17,21 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.js') || filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-store');
+    }
+  },
+}));
 
-app.use('/api/auth', AuthRouter);
+app.use('/auth', AuthRouter);
 
 app.get('/health', (req, res) => {
+  res.json({ status: 'ok', players: io.engine.clientsCount });
+});
+
+app.get('/status', (req, res) => {
   res.json({ status: 'ok', players: io.engine.clientsCount });
 });
 

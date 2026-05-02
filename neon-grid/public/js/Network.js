@@ -46,7 +46,7 @@ export class Network {
       this._remotePlayers.delete(id);
     });
 
-    this._socket.on('player:hit', (data) => {
+    this._socket.on('shot:confirmed', (data) => {
       if (this.onHit) this.onHit(data);
     });
 
@@ -114,10 +114,14 @@ export class Network {
     this._socket.emit('game:start');
   }
 
-  // targetId and distance are optional — only provided when a player is hit
-  sendShoot(origin, direction, targetId = null, distance = 0) {
+  // targetId, distance, hitZone optional — only provided when a player is hit
+  sendShoot(origin, direction, targetId = null, distance = 0, hitZone = null) {
     const payload = { origin, direction, weaponClass: this._playerClass };
-    if (targetId) { payload.targetId = targetId; payload.distance = distance; }
+    if (targetId) {
+      payload.targetId = targetId;
+      payload.distance = distance;
+      payload.hitZone  = hitZone || 'body';
+    }
     this._socket.emit('player:shoot', payload);
   }
 
