@@ -8,44 +8,86 @@ export class Controls {
     this.sensitivity = 0.002;
 
     this.keys = {};
-    this.isLocked = false;
-    this.jumpVelocity = 0;
+    this.isLocked = false;   // true when pointer lock is actually granted
+    this.isPlaying = false;  // true after first click — drives overlay/crosshair
     this.onShoot = null;
 
     this._overlay = document.getElementById('lock-overlay');
     this._crosshair = document.getElementById('crosshair');
 
+    // For fallback mouse-delta tracking (when pointer lock is unavailable)
+    this._lastMouseX = null;
+    this._lastMouseY = null;
+
     this._bindEvents();
   }
 
+  _setPlaying(value) {
+    this.isPlaying = value;
+    if (this._overlay)   this._overlay.style.display   = value ? 'none'  : 'flex';
+    if (this._crosshair) this._crosshair.style.display = value ? 'block' : 'none';
+  }
+
   _bindEvents() {
-    // Pointer lock — listen on document so clicks on the overlay also work
+    // ── Click: enter play mode & attempt pointer lock ──────────
     document.addEventListener('click', () => {
-      if (!this.isLocked) this.domElement.requestPointerLock();
+      if (!this.isPlaying) {
+        this._setPlaying(true);
+      }
+      // Always try pointer lock — silently ignored if not supported
+      this.domElement.requestPointerLock?.();
     });
 
+    // ── Pointer lock change (real browser / future support) ────
     document.addEventListener('pointerlockchange', () => {
       this.isLocked = document.pointerLockElement === this.domElement;
-      if (this._overlay) this._overlay.style.display = this.isLocked ? 'none' : 'flex';
-      if (this._crosshair) this._crosshair.style.display = this.isLocked ? 'block' : 'none';
+      // Pointer lock exiting doesn't mean we stop playing —
+      // only an explicit Escape press should show the overlay again.
     });
 
-    // Mouse look
+    // ── Escape: exit play mode ─────────────────────────────────
+    document.addEventListener('keydown', (e) => {
+      this.keys[e.code] = true;
+      if (e.code === 'Escape') {
+        this._setPlaying(false);
+        this._lastMouseX = null;
+        this._lastMouseY = null;
+      }
+    });
+    document.addEventListener('keyup', (e) => { this.keys[e.code] = false; });
+
+    // ── Mouse look ─────────────────────────────────────────────
     document.addEventListener('mousemove', (e) => {
-      if (!this.isLocked) return;
-      this.yaw -= e.movementX * this.sensitivity;
-      this.pitch -= e.movementY * this.sensitivity;
+      if (!this.isPlaying) return;
+
+      let dx, dy;
+
+      if (this.isLocked) {
+        // Pointer lock: use hardware deltas
+        dx = e.movementX;
+        dy = e.movementY;
+      } else {
+        // Fallback: compute delta from last known position
+        if (this._lastMouseX === null) {
+          this._lastMouseX = e.clientX;
+          this._lastMouseY = e.clientY;
+          return;
+        }
+        dx = e.clientX - this._lastMouseX;
+        dy = e.clientY - this._lastMouseY;
+        this._lastMouseX = e.clientX;
+        this._lastMouseY = e.clientY;
+      }
+
+      this.yaw   -= dx * this.sensitivity;
+      this.pitch -= dy * this.sensitivity;
       const MAX_PITCH = (85 * Math.PI) / 180;
       this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch));
     });
 
-    // Keys
-    document.addEventListener('keydown', (e) => { this.keys[e.code] = true; });
-    document.addEventListener('keyup', (e) => { this.keys[e.code] = false; });
-
-    // Shoot
+    // ── Shoot ──────────────────────────────────────────────────
     document.addEventListener('mousedown', (e) => {
-      if (!this.isLocked || e.button !== 0) return;
+      if (!this.isPlaying || e.button !== 0) return;
       console.log('SHOOT');
       if (this.onShoot) this.onShoot();
     });
@@ -59,7 +101,6 @@ export class Controls {
     return !!this.keys['Space'];
   }
 
-  // Returns {x, z} movement intent in world-space relative to camera yaw
   getMovementVector() {
     let fx = 0, fz = 0;
 
@@ -70,12 +111,10 @@ export class Controls {
 
     if (fx === 0 && fz === 0) return { x: 0, z: 0 };
 
-    // Normalize diagonal
     const len = Math.sqrt(fx * fx + fz * fz);
     fx /= len;
     fz /= len;
 
-    // Rotate by yaw so movement is relative to where the camera faces
     const cos = Math.cos(this.yaw);
     const sin = Math.sin(this.yaw);
     return {
@@ -84,7 +123,6 @@ export class Controls {
     };
   }
 
-  // Apply yaw/pitch to the camera's quaternion each frame
   applyToCamera() {
     const { camera, yaw, pitch } = this;
     camera.rotation.order = 'YXZ';
