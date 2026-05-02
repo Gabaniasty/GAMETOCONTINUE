@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEON GRID</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="landing">
+    <div class="landing__bg-grid" aria-hidden="true"></div>
+
+    <header class="landing__header">
+      <span class="logo neon-glow">NG</span>
+    </header>
+
+    <main class="landing__main">
+      <h1 class="landing__title neon-glow">NEON GRID</h1>
+      <p class="landing__tagline">Fast. Brutal. Neon.</p>
+
+      <div class="landing__actions">
+        <a href="/game.html" class="btn">PLAY NOW</a>
+        <a href="/auth.html" class="btn btn-secondary">LOGIN / REGISTER</a>
+      </div>
+    </main>
+
+    <footer class="landing__footer">
+      <span class="footer-text">© 2025 NEON GRID · ALL RIGHTS RESERVED</span>
+    </footer>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    socket.on('connect', () => {
+      console.log('Socket connected:', socket.id);
+    });
+  </script>
+
+  <style>
+    /* ── Landing page layout ── */
+    .landing {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Perspective grid floor */
+    .landing__bg-grid {
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,245,255,0.07) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,245,255,0.07) 1px, transparent 1px);
+      background-size: 60px 60px;
+      mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 40%, transparent 100%);
+      pointer-events: none;
+    }
+
+    .landing__header {
+      position: fixed;
+      top: 1.5rem;
+      left: 2rem;
+    }
+
+    .logo {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+      font-size: 1.4rem;
+      color: #00f5ff;
+      letter-spacing: 0.1em;
+    }
+
+    .landing__main {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.5rem;
+      text-align: center;
+      z-index: 1;
+    }
+
+    .landing__title {
+      font-size: clamp(3.5rem, 10vw, 7rem);
+      font-weight: 900;
+      color: #00f5ff;
+      letter-spacing: 0.12em;
+      line-height: 1;
+      animation: pulse-glow 3s ease-in-out infinite;
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% { text-shadow: 0 0 10px #00f5ff, 0 0 20px #00f5ff; }
+      50%       { text-shadow: 0 0 20px #00f5ff, 0 0 40px #00f5ff, 0 0 60px rgba(0,245,255,0.4); }
+    }
+
+    .landing__tagline {
+      font-size: clamp(0.85rem, 2.5vw, 1.1rem);
+      font-weight: 400;
+      letter-spacing: 0.4em;
+      text-transform: uppercase;
+      color: #ff2d78;
+      text-shadow: 0 0 8px #ff2d78;
+    }
+
+    .landing__actions {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .landing__actions .btn {
+      min-width: 220px;
+      text-align: center;
+    }
+
+    .landing__footer {
+      position: fixed;
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .footer-text {
+      font-size: 0.6rem;
+      letter-spacing: 0.25em;
+      color: rgba(224, 224, 255, 0.3);
+    }
+  </style>
+</body>
+</html>

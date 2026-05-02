@@ -1,0 +1,98 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #0a0a0f;
+  --primary: #00f5ff;
+  --secondary: #ff2d78;
+  --accent: #7b2fff;
+  --text: #e0e0ff;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Orbitron', sans-serif;
+  overflow-x: hidden;
+}
+
+.neon-glow {
+  text-shadow: 0 0 10px #00f5ff, 0 0 20px #00f5ff;
+}
+
+.neon-glow-pink {
+  text-shadow: 0 0 10px #ff2d78, 0 0 20px #ff2d78;
+}
+
+.neon-glow-purple {
+  text-shadow: 0 0 10px #7b2fff, 0 0 20px #7b2fff;
+}
+
+/* ── Buttons ── */
+.btn {
+  display: inline-block;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  padding: 0.75rem 2rem;
+  background: transparent;
+  border: 2px solid var(--primary);
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.2s, box-shadow 0.2s, color 0.2s;
+  clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+}
+
+.btn:hover {
+  background: rgba(0, 245, 255, 0.12);
+  box-shadow: 0 0 12px #00f5ff, 0 0 24px rgba(0, 245, 255, 0.4);
+  color: #fff;
+}
+
+.btn-secondary {
+  border-color: var(--secondary);
+  color: var(--secondary);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 45, 120, 0.12);
+  box-shadow: 0 0 12px #ff2d78, 0 0 24px rgba(255, 45, 120, 0.4);
+  color: #fff;
+}
+
+.btn-accent {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn-accent:hover {
+  background: rgba(123, 47, 255, 0.15);
+  box-shadow: 0 0 12px #7b2fff, 0 0 24px rgba(123, 47, 255, 0.4);
+  color: #fff;
+}
+
+/* ── Scanline overlay ── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.05) 2px,
+    rgba(0, 0, 0, 0.05) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
