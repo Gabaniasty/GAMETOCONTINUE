@@ -1,0 +1,307 @@
+Replace the entire existing map in NEON GRID with a fully designed cyberpunk arena
+called "NEON DISTRICT". Delete all old map/floor/wall/box code from Game.js and
+replace it with a new file: public/js/NeonDistrictMap.js
+
+This map must look like a real designed FPS level — multi-level architecture,
+glowing neon materials, detailed lighting, and canvas-generated textures.
+Inspired by Krunker.io's clean box-based level design but with a dark neon aesthetic.
+
+No external files. Everything is built from Three.js geometry and canvas textures.
+
+─────────────────────────────────────────
+SECTION 1 — CANVAS TEXTURES
+─────────────────────────────────────────
+
+Create a helper function makeTexture(drawFn, size=512) that:
+  - Creates an HTML canvas of given size
+  - Calls drawFn(ctx, size) to draw onto it
+  - Returns new THREE.CanvasTexture(canvas) with
+    wrapS and wrapT set to THREE.RepeatWrapping
+
+Define these 5 textures using makeTexture():
+
+1. gridFloorTexture (512x512):
+   - Fill entire canvas: #08080f
+   - Draw a grid of lines every 32px: strokeStyle #00f5ff, lineWidth 0.5, globalAlpha 0.35
+   - Draw thicker lines every 128px: strokeStyle #00f5ff, lineWidth 1.5, globalAlpha 0.6
+   - At every grid intersection every 128px: draw a small circle radius 2, fill #00f5ff, alpha 0.8
+   - Set repeat to (10, 10) on the texture
+
+2. wallPanelTexture (512x512):
+   - Fill: #0a0a1a
+   - Draw horizontal panel lines every 64px: strokeStyle #1a1a3a, lineWidth 1
+   - Draw vertical seam lines every 128px: strokeStyle #1a1a3a, lineWidth 1
+   - At y=20 and y=44 of each panel row: draw a 2px glowing strip,
+     gradient from #00f5ff00 to #00f5ff to #00f5ff00
+   - Set repeat to (4, 4)
+
+3. roofTexture (512x512):
+   - Fill: #060610
+   - Draw a dense dot grid every 16px: tiny circles radius 1, fill #ffffff, alpha 0.07
+   - Draw diagonal stripes every 64px: strokeStyle #7b2fff, lineWidth 1, alpha 0.15
+   - Set repeat to (6, 6)
+
+4. neonFloorTexture (512x512) — used for the central plaza:
+   - Fill: #050510
+   - Draw a hexagonal grid pattern with 48px radius hexagons
+     strokeStyle #ff2d78, lineWidth 1, alpha 0.4
+   - Fill alternate hexagons with #1a0020, alpha 0.3
+   - Set repeat to (6, 6)
+
+5. metalTrimTexture (512x32):
+   - Fill: #0d0d22
+   - Horizontal gradient stripe: left #00f5ff, center #ffffff, right #00f5ff
+   - globalAlpha 0.9
+
+─────────────────────────────────────────
+SECTION 2 — MATERIALS
+─────────────────────────────────────────
+
+Define these shared MeshStandardMaterial instances:
+
+  matFloor:    map: gridFloorTexture,  color: 0x334455, roughness: 0.8, metalness: 0.3
+  matPlaza:    map: neonFloorTexture,  color: 0x220033, roughness: 0.6, metalness: 0.5
+  matWall:     map: wallPanelTexture,  color: 0x334466, roughness: 0.9, metalness: 0.1,
+                                       emissive: 0x001133, emissiveIntensity: 0.2
+  matRoof:     map: roofTexture,       color: 0x222244, roughness: 1.0, metalness: 0.0
+  matGlowCyan: color: 0x003344, emissive: 0x00f5ff, emissiveIntensity: 0.9,
+               roughness: 0.5, metalness: 0.8
+  matGlowPink: color: 0x330022, emissive: 0xff2d78, emissiveIntensity: 0.9,
+               roughness: 0.5, metalness: 0.8
+  matGlowPurp: color: 0x1a0033, emissive: 0x7b2fff, emissiveIntensity: 0.9,
+               roughness: 0.5, metalness: 0.8
+  matGlass:    color: 0x0033ff, transparent: true, opacity: 0.25,
+               emissive: 0x0044ff, emissiveIntensity: 0.5
+
+For every solid mesh, also add EdgeLines:
+  Create EdgesGeometry from the mesh geometry.
+  Add LineSegments with LineBasicMaterial color 0x00f5ff, opacity 0.15, transparent true.
+  This gives every surface a subtle neon wireframe outline.
+
+─────────────────────────────────────────
+SECTION 3 — MAP LAYOUT
+─────────────────────────────────────────
+
+The map is 80x80 units. Y=0 is ground level.
+All sizes are [width, height, depth] and positions are [x, y, z].
+Y position is the CENTER of the mesh vertically.
+
+── GROUND FLOOR ──
+
+Main Floor:
+  PlaneGeometry(80, 80), rotated -90deg on X axis, y=0, matFloor
+  Second plane PlaneGeometry(24, 24) at y=0.01 for the central plaza, matPlaza
+
+Outer Boundary Walls:
+  North wall: [80, 12, 1.5] at (0, 6, -40) matWall
+  South wall: [80, 12, 1.5] at (0, 6,  40) matWall
+  East wall:  [1.5, 12, 80] at (40, 6,  0) matWall
+  West wall:  [1.5, 12, 80] at (-40, 6, 0) matWall
+
+── 4 CORNER BUILDINGS ──
+
+Building NW: [18, 8, 18] at (-31, 4, -31) matWall
+Building NE: [18, 8, 18] at ( 31, 4, -31) matWall
+Building SW: [18, 8, 18] at (-31, 4,  31) matWall
+Building SE: [18, 8, 18] at ( 31, 4,  31) matWall
+
+On each building add:
+  - 2 glowing window strips per side: [16, 1.2, 0.3] at y=5.5 and y=3.0
+    matGlowCyan on NW and SE buildings, matGlowPink on NE and SW buildings
+  - Roof slab: [18, 0.4, 18] at y=8.2, matRoof
+
+── ELEVATED WALKWAYS (connecting buildings at y=4) ──
+
+North walkway: [8, 0.6, 12]  at (0,  4.3, -31) matFloor
+South walkway: [8, 0.6, 12]  at (0,  4.3,  31) matFloor
+West walkway:  [12, 0.6, 8]  at (-31, 4.3,  0) matFloor
+East walkway:  [12, 0.6, 8]  at ( 31, 4.3,  0) matFloor
+
+On each walkway add two low railing walls along the long edges:
+  [length, 1.2, 0.15] at y=5.2, matGlowCyan — players can shoot over these
+
+Under-walkway support pillars: [1, 4, 1] at y=2 spaced along each walkway, matWall
+
+── RAMPS (ground to walkway level) ──
+
+NW ramp: [6, 0.4, 8] tilted to rise from y=0 at z=-22 to y=4 at z=-29, at x=-22
+NE ramp: [6, 0.4, 8] tilted to rise from y=0 at z=-22 to y=4 at z=-29, at x= 22
+SW ramp: [6, 0.4, 8] tilted to rise from y=0 at z= 22 to y=4 at z= 29, at x=-22
+SE ramp: [6, 0.4, 8] tilted to rise from y=0 at z= 22 to y=4 at z= 29, at x= 22
+matFloor for all ramps.
+
+── CENTRAL PLAZA COVER ──
+
+4 large cover crates arranged symmetrically:
+  NW crate: [4, 2.5, 4] at (-8, 1.25, -8) matWall, emissive pink strip on top edge
+  NE crate: [4, 2.5, 4] at ( 8, 1.25, -8) matWall, emissive cyan strip on top edge
+  SW crate: [4, 2.5, 4] at (-8, 1.25,  8) matWall, emissive cyan strip on top edge
+  SE crate: [4, 2.5, 4] at ( 8, 1.25,  8) matWall, emissive pink strip on top edge
+
+4 low holo-barrier walls in a diamond pattern:
+  [5, 1.2, 0.4] at (0,0.6,-5), (0,0.6,5), (-5,0.6,0), (5,0.6,0) — matGlowPurp
+
+Center raised dais:
+  [8, 0.5, 8] at (0, 0.5, 0) matGlowCyan
+  TorusGeometry(3.5, 0.1, 6, 32) at y=0.75, matGlowCyan — glowing neon ring on top
+
+── SNIPER TOWERS (high ground) ──
+
+Tower NW:
+  Floor slab [10, 0.5, 10] at (-31, 12, -31) matRoof
+  4 half-height walls [10, 3, 0.5] around edge at y=13.5, matWall
+  PointLight pink intensity 2, distance 8, at (-31, 14, -31)
+
+Tower SE:
+  Floor slab [10, 0.5, 10] at (31, 12, 31) matRoof
+  4 half-height walls [10, 3, 0.5] around edge at y=13.5, matWall
+  PointLight cyan intensity 2, distance 8, at (31, 14, 31)
+
+Tower access: when player walks into a [2, 6, 2] trigger box at tower base,
+teleport them up to tower floor y=12.5. Same box triggers going back down.
+
+High bridge (risky center crossing):
+  [4, 0.5, 30] at (0, 10, 0) matFloor
+  Thin railings [30, 1, 0.1] on each long side at y=10.75, matGlowPurp
+
+── MID-LEVEL BALCONIES ──
+
+One balcony on each building's inner-facing wall:
+  NW balcony: [6, 0.4, 4] at (-22, 8.2, -22)
+  NE balcony: [6, 0.4, 4] at ( 22, 8.2, -22)
+  SW balcony: [6, 0.4, 4] at (-22, 8.2,  22)
+  SE balcony: [6, 0.4, 4] at ( 22, 8.2,  22)
+  matFloor, with railing [6, 1, 0.15] at front edge, matGlowPink
+
+─────────────────────────────────────────
+SECTION 4 — LIGHTING SETUP
+─────────────────────────────────────────
+
+Remove ALL existing lights. Replace with this setup only:
+
+Ambient: THREE.AmbientLight(0x080818, 0.8) — very dim blue-black
+
+Street-level point lights:
+  Cyan 1:   PointLight(0x00f5ff, 3, 25) at (-15, 6, -15)
+  Cyan 2:   PointLight(0x00f5ff, 3, 25) at ( 15, 6,  15)
+  Pink 1:   PointLight(0xff2d78, 3, 25) at ( 15, 6, -15)
+  Pink 2:   PointLight(0xff2d78, 3, 25) at (-15, 6,  15)
+  Purple:   PointLight(0x7b2fff, 2, 20) at (0, 4, 0)
+  Overhead: PointLight(0xaaaaff, 2, 30) at (0, 15, 0)
+
+Under-walkway accent lights:
+  4 x PointLight(0x0088ff, 1.5, 12) centered under each walkway at y=1
+
+Building window lights:
+  8 x PointLight alternating 0x00f5ff and 0xff2d78, intensity 1, distance 8
+  Placed at building window strip positions
+
+Tower lights:
+  NW: PointLight(0xff2d78, 3, 15) at (-31, 14, -31)
+  SE: PointLight(0x00f5ff, 3, 15) at ( 31, 14,  31)
+
+ANIMATED LIGHTS — update each frame:
+  - 3 flickering lights: randomly every 2-8 seconds (use Math.random() < 0.002 per frame)
+    tween intensity between 0.2 and full value over 80ms to simulate broken neon
+  - 2 slow-pulsing lights: intensity = base + Math.sin(Date.now() * 0.002) * 0.5
+
+─────────────────────────────────────────
+SECTION 5 — DECORATIVE ELEMENTS
+─────────────────────────────────────────
+
+NEON SIGNS — create function makeSignTexture(line1, line2, glowColor):
+  512x128 canvas, fill #000000
+  Outer border 3px stroke in glowColor
+  Inner glow: shadowBlur 8, shadowColor glowColor
+  line1: bold 48px monospace, glowColor, centered at y=55
+  line2: 22px monospace, #aaaaff, centered at y=95
+  Return THREE.CanvasTexture
+
+Place as PlaneGeometry(6, 1.5) on each building's inner face:
+  NW face: "GHOST SECTOR" / "UNAUTHORIZED ZONE" — cyan glow, at (-22, 6, -22) facing center
+  NE face: "VOLT CORP"    / "DIVISION 7"         — pink glow, at ( 22, 6, -22) facing center
+  SW face: "NEON GRID"    / "ARENA v2.1"          — purple glow, at (-22, 6, 22) facing center
+  SE face: "CYBER KILL"   / "RANKED MATCH"         — cyan glow, at ( 22, 6, 22) facing center
+
+HOLOGRAPHIC PYLONS — 3 in central plaza at (-6,0,0), (6,0,0), (0,0,-6):
+  Base:    CylinderGeometry(0.3, 0.4, 0.3, 8) at y=0.15, matGlowCyan
+  Shaft:   CylinderGeometry(0.08, 0.08, 3, 8) at y=1.65, matGlowCyan
+  Top:     SphereGeometry(0.2, 8, 8) at y=3.3, matGlowCyan
+  Beam:    CylinderGeometry(0.15, 0.15, 4, 6, 1, true) at y=3.5
+           MeshBasicMaterial color 0x00f5ff, transparent true, opacity 0.12, DoubleSide
+  Light:   PointLight(0x00f5ff, 2, 6) at top
+  ANIMATE: rotate entire pylon group on Y at 0.3 rad/s
+  ANIMATE: beam opacity = 0.08 + Math.sin(Date.now() * 0.002) * 0.06
+
+NEON EDGE TRIM — for every walkway and platform surface:
+  Add thin [length, 0.08, 0.08] slab along each long edge at surface Y level
+  matGlowCyan on north/east edges, matGlowPink on south/west edges
+  These look like embedded LED strips
+
+ATMOSPHERE:
+  scene.fog = new THREE.FogExp2(0x02020a, 0.022)
+
+SKYBOX:
+  SphereGeometry(200, 32, 32) with side THREE.BackSide
+  Canvas 1024x512: vertical gradient #000008 to #02021a to #000008
+  Draw ~200 tiny white dots (random positions, radius 0.5-1.5px) as stars
+  Draw 6 faint vertical lines: strokeStyle #00f5ff, lineWidth 0.5, alpha 0.04
+  Use as MeshBasicMaterial map on inside of sphere
+
+─────────────────────────────────────────
+SECTION 6 — COLLISION EXPORT
+─────────────────────────────────────────
+
+NeonDistrictMap must export getCollisionBoxes() returning an array of:
+  { minX, maxX, minY, maxY, minZ, maxZ }
+
+Include boxes for: all 4 outer walls, all 4 buildings, all 4 walkways,
+all 4 ramps (treat as flat box spanning y=0 to y=4), all 4 cover crates,
+4 holo-barriers, center dais, both tower floors, high bridge, all 4 balconies.
+
+In Controls.js replace old collision with a loop over map.getCollisionBoxes().
+Player AABB: 0.8 wide, 1.8 tall, 0.8 deep, centered on camera x/z, bottom at camera y-1.8.
+
+─────────────────────────────────────────
+SECTION 7 — SPAWN POINTS
+─────────────────────────────────────────
+
+Replace old spawn points in GameServer.js with these 8:
+  1. (-31, 1.6, -31)   NW ground
+  2. ( 31, 1.6, -31)   NE ground
+  3. (-31, 1.6,  31)   SW ground
+  4. ( 31, 1.6,  31)   SE ground
+  5. (  0, 4.8, -31)   North walkway
+  6. (  0, 4.8,  31)   South walkway
+  7. (-31, 4.8,   0)   West walkway
+  8. ( 31, 4.8,   0)   East walkway
+
+Pick the spawn point with the greatest minimum distance from all living players.
+
+─────────────────────────────────────────
+SECTION 8 — INTEGRATE INTO Game.js
+─────────────────────────────────────────
+
+In Game.js:
+  1. Import NeonDistrictMap, instantiate: map = new NeonDistrictMap(scene)
+  2. Call map.addToScene() to add all meshes
+  3. In the game loop call map.update(delta) for animated elements
+  4. Pass map.getCollisionBoxes() to Controls for collision detection
+  5. DELETE all old map geometry — old floor, GridHelper, old walls, scattered boxes
+
+─────────────────────────────────────────
+ACCEPTANCE CRITERIA — verify all of these
+─────────────────────────────────────────
+
+✓ Map has clearly distinct zones — buildings, plaza, walkways, towers
+✓ Neon signs are readable on all 4 building faces
+✓ 3 holographic pylons spin slowly in the plaza
+✓ Edge trim glows on all walkway and platform edges
+✓ Sky has a city-night gradient with visible stars
+✓ Flickering lights randomly stutter — map feels alive
+✓ Fog makes distant walls fade to near-black so lights pop
+✓ Players can walk up all 4 ramps onto walkways
+✓ Players cannot walk through any wall or building
+✓ Walking into a tower base teleports player to top floor
+✓ FPS stays above 40 — check for unnecessary draw calls
+✓ All old placeholder map code is deleted

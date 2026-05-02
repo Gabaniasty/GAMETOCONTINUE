@@ -16,17 +16,16 @@ export class BulletSystem {
       .addScaledVector(right, 0.15)
       .addScaledVector(up,   -0.1);
 
-    // Bullet mesh — cylinder oriented along Z
+    // Bullet mesh — cylinder oriented along Z, bright emissive (no PointLight — too expensive)
+    const cylGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.18, 6);
     const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.015, 0.015, 0.18, 6),
-      new THREE.MeshBasicMaterial({ color: 0xffffff })
+      cylGeo,
+      new THREE.MeshBasicMaterial({ color: 0x88ffff })
     );
     mesh.rotation.x = Math.PI / 2; // align to Z axis
 
-    const glow = new THREE.PointLight(0x00f5ff, 3, 1.5);
-
     const group = new THREE.Group();
-    group.add(mesh, glow);
+    group.add(mesh);
     group.position.copy(spawnPos);
     // Align travel direction to +Z of group
     group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
@@ -47,9 +46,10 @@ export class BulletSystem {
     this._bullets.push({
       group, trail, tPos,
       history: [spawnPos.clone()],
+      cylGeo,
       dir,
       speed:    60,
-      lifetime: 1.5,
+      lifetime: 0.6,   // arena is small — 60 u/s covers full map in ~1.3s, 0.6 is plenty
     });
   }
 
@@ -129,7 +129,8 @@ export class BulletSystem {
     const b = this._bullets[i];
     this._scene.remove(b.group);
     this._scene.remove(b.trail);
-    b.trail.geometry.dispose();
+    b.cylGeo.dispose();           // dispose bullet cylinder geometry
+    b.trail.geometry.dispose();   // dispose trail geometry
     this._bullets.splice(i, 1);
   }
 }

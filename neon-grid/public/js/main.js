@@ -29,8 +29,7 @@ game.controls.onShoot = () => {
 
   // Immediate client-side feedback
   sound.playGunshot();
-  game.triggerRecoil();
-  game.spawnMuzzleFlash(game.camera);
+  game.triggerRecoil();              // weapon scene muzzle flash handled here
   bullets.spawnBullet(origin, direction, game.camera);
 
   network.sendShoot(origin, direction);

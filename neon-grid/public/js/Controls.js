@@ -35,7 +35,10 @@ export class Controls {
   }
 
   _tryPointerLock() {
-    try { this.domElement.requestPointerLock(); } catch (_) { /* blocked in iframes — ignore */ }
+    try {
+      const p = this.domElement.requestPointerLock();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch (_) { /* blocked in iframes — ignore */ }
   }
 
   _enter() {
