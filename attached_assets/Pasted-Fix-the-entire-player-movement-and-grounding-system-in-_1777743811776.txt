@@ -1,0 +1,162 @@
+Fix the entire player movement and grounding system in NEON GRID.
+The character bounces up and down while moving as if constantly leaving the ground.
+This must be completely resolved. Touch Controls.js only unless camera logic lives elsewhere.
+
+─────────────────────────────────────────
+THE PROBLEMS TO FIX
+─────────────────────────────────────────
+
+1. HEAD BOB is too aggressive — the camera oscillates too high/fast during sprint,
+   making it look like the player is hopping. It must be subtle, not a jump simulation.
+
+2. GROUND SNAPPING is broken — the player is repeatedly leaving the ground by tiny
+   amounts and falling back down each frame, creating a micro-stutter bounce.
+   The player must be locked to the ground surface unless they explicitly jump.
+
+3. GRAVITY is fighting the ground — velocity.y keeps accumulating downward even
+   while grounded, then gets released in small bursts. This must be clamped properly.
+
+4. SPRINT does not feel different from walk in a natural way — it should be faster
+   and slightly more forward-leaning, NOT more bouncy.
+
+─────────────────────────────────────────
+SECTION 1 — GROUND DETECTION (fix first)
+─────────────────────────────────────────
+
+Replace the existing ground check with this exact logic:
+
+Every frame, cast a downward ray from the player's current position:
+  origin:    { x: camera.x, y: camera.y - eyeHeight + 0.1, z: camera.z }
+             (just above the feet, not from camera eye level)
+  direction: (0, -1, 0)
+  maxLength: 0.25
+
+Use THREE.Raycaster against this.collidableMeshes.
+
+If the ray hits within 0.25 units:
+  grounded = true
+  // Snap the camera Y to sit exactly at: hit.point.y + eyeHeight
+  // Use a HARD snap, not a lerp — lerp causes the bouncing
+  camera.position.y = hit.point.y + eyeHeight
+  // Kill ALL downward velocity the moment we are grounded
+  if (velocity.y < 0) velocity.y = 0
+
+If the ray hits nothing:
+  grounded = false
+  // Only apply gravity when truly airborne
+  velocity.y += gravity * delta
+
+NEVER accumulate velocity.y while grounded.
+NEVER apply gravity while grounded.
+The two states (grounded / airborne) must be completely mutually exclusive.
+
+eyeHeight values:
+  standing: 1.65
+  crouching: 1.1
+  transition: lerp between the two at speed 12/s (smooth crouch, no bounce)
+
+─────────────────────────────────────────
+SECTION 2 — HEAD BOB (make it subtle)
+─────────────────────────────────────────
+
+The head bob must simulate natural human walking sway, NOT vertical jumping.
+It should be almost unnoticeable — just enough to feel alive.
+
+Rules:
+  ONLY apply head bob when grounded = true AND horizontal speed > 0.5
+  IMMEDIATELY damp bob back to 0 when stopped OR airborne OR crouching
+  NEVER let bob push the camera upward more than 0.018 units at walk
+  NEVER let bob push the camera upward more than 0.026 units at sprint
+
+Parameters:
+  walkBobSpeed  = 9.5    // cycles per second
+  walkBobAmount = 0.016  // max Y offset in units — very small
+  sprintBobSpeed  = 13.0
+  sprintBobAmount = 0.024
+
+  // Horizontal sway (side to side) — even more subtle
+  walkSwayAmount  = 0.006
+  sprintSwayAmount = 0.01
+
+Implementation:
+  bobTimer += delta * (isSprinting ? sprintBobSpeed : walkBobSpeed)
+  
+  // Vertical bob — sine wave
+  const bobY = Math.sin(bobTimer) * (isSprinting ? sprintBobAmount : walkBobAmount)
+  
+  // Horizontal sway — half frequency of vertical
+  const bobX = Math.sin(bobTimer * 0.5) * (isSprinting ? sprintSwayAmount : walkSwayAmount)
+  
+  // Apply AFTER the ground snap — always add to the already-snapped Y
+  camera.position.y += bobY
+  camera.position.x += bobX  // tiny left-right sway
+
+When player stops moving OR becomes airborne:
+  // Smoothly return bob to zero — do NOT cut it instantly (jarring)
+  bobTimer = THREE.MathUtils.lerp(bobTimer, Math.round(bobTimer / Math.PI) * Math.PI, delta * 8)
+  // This lerps bobTimer toward the nearest 0-crossing so bob smoothly returns to neutral
+
+─────────────────────────────────────────
+SECTION 3 — VELOCITY & MOVEMENT (clean up)
+─────────────────────────────────────────
+
+Use this exact velocity update order every frame. Order matters:
+
+  1. Read input (WASD), compute wishDir in camera-space XZ plane (no Y component)
+  2. If grounded:
+       accelerate XZ velocity toward (wishDir * currentSpeed) using groundAccel
+       apply groundFriction when no input
+       velocity.y = 0   ← enforce this every grounded frame, no exceptions
+  3. If airborne:
+       apply airAccel to XZ
+       velocity.y += gravity * delta   ← only here
+  4. Move camera by velocity * delta
+  5. Run ground detection ray (Section 1)
+     → if grounded: hard snap Y, zero velocity.y
+  6. Run wall collision rays (forward/back/left/right)
+  7. Apply head bob offset (Section 2) on top of final camera Y
+
+Speed values (do not change these):
+  walkSpeed    = 5.5
+  sprintSpeed  = 8.2   ← reduced slightly from before to feel less chaotic
+  crouchSpeed  = 2.8
+  airSpeed     = 3.5
+  gravity      = -22.0
+  jumpForce    = 7.2
+  groundAccel  = 55.0
+  groundFrict  = 48.0
+  airAccel     = 16.0
+
+Sprint condition:
+  isSprinting = Shift held AND grounded AND moving forward (wishDir.z < -0.1)
+  Do NOT allow sprint while:
+    - airborne
+    - crouching
+    - moving backwards or sideways only
+
+─────────────────────────────────────────
+SECTION 4 — WHAT TO REMOVE
+─────────────────────────────────────────
+
+Remove or disable any of the following if they exist:
+  ✗ Any lerp on camera.position.y for ground following (causes oscillation)
+  ✗ Any spring/damping system on Y position (same problem)
+  ✗ Any code that applies gravity AND also has a separate "stick to ground" lerp
+    running at the same time — these two fight each other and cause bouncing
+  ✗ Any head bob that modifies camera.position.y by more than 0.03 units
+  ✗ Any code that re-applies bobAmount based on velocity.y (airborne bob)
+
+─────────────────────────────────────────
+ACCEPTANCE CRITERIA
+─────────────────────────────────────────
+
+✓ Walking on flat ground — camera stays perfectly level, zero bounce
+✓ Sprinting on flat ground — camera stays level, only a very slight subtle sway
+✓ Running over the edge of a ramp or step — no bouncing on landing, instant snap
+✓ Standing still — camera is completely frozen on Y axis, no drift
+✓ Jumping — clean parabolic arc up and down, hard snap on landing with no bounce
+✓ Crouching while moving — smooth camera lower, no stutter
+✓ Sprint feels faster than walk but NOT more vertical
+✓ Stopping mid-sprint — camera smoothly returns to neutral over ~0.12 seconds
+✓ Test by sprinting in a straight line for 5 seconds — camera Y must not deviate
+   more than 0.026 units from the ground-snap baseline at any point
