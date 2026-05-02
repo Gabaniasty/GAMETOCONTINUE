@@ -1,4 +1,4 @@
-import { Controls }         from './Controls.js';
+import { Controls }           from './Controls.js';
 import { buildCharacterModel } from './CharacterModel.js';
 
 const CLASS_COLORS = {
@@ -30,6 +30,10 @@ export class Game {
 
     // ── Controls ──────────────────────────────────────────────────
     this.controls = new Controls(this.camera, this.canvas);
+
+    // ── Local player class ─────────────────────────────────────────
+    const localClass = localStorage.getItem('ng_class') || 'SOLDIER';
+    this._localClassColor = CLASS_COLORS[localClass] || 0x00f5ff;
 
     // ── Physics ───────────────────────────────────────────────────
     this.yVelocity  = 0;
@@ -117,33 +121,34 @@ export class Game {
     wLight.position.set(0, 1, 0);
     this.weaponScene.add(wLight);
 
-    const gm = (color, emissive, intensity) =>
+    const gc  = this._localClassColor;
+    const gm  = (color, emissive, intensity) =>
       new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: intensity });
 
     this._gunGroup = new THREE.Group();
 
     // Slide / body
     this._gunGroup.add(Object.assign(
-      new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.28), gm(0x1a1a2e, 0x00f5ff, 0.5))
+      new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.28), gm(0x1a1a2e, gc, 0.5))
     ));
 
     // Barrel
-    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.18), gm(0x1a1a2e, 0x00f5ff, 0.7));
+    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.18), gm(0x1a1a2e, gc, 0.7));
     barrel.position.set(0, 0.025, -0.23);
     this._gunGroup.add(barrel);
 
     // Handle
-    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.12, 0.07), gm(0x111122, 0x00f5ff, 0.2));
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.12, 0.07), gm(0x111122, gc, 0.2));
     handle.position.set(0, -0.095, 0.07);
     this._gunGroup.add(handle);
 
     // Trigger
-    const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.06, 0.02), gm(0x333344, 0x00f5ff, 0.3));
+    const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.06, 0.02), gm(0x333344, gc, 0.3));
     trigger.position.set(0, -0.03, -0.02);
     this._gunGroup.add(trigger);
 
     // Muzzle tip
-    const muzzleTip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.01), gm(0x00f5ff, 0x00f5ff, 1.0));
+    const muzzleTip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.01), gm(gc, gc, 1.0));
     muzzleTip.position.set(0, 0.025, -0.32);
     this._gunGroup.add(muzzleTip);
 
@@ -154,7 +159,7 @@ export class Game {
     this.weaponScene.add(this._gunGroup);
 
     // Muzzle flash point light (off by default)
-    this._muzzleLight = new THREE.PointLight(0x00f5ff, 0, 2);
+    this._muzzleLight = new THREE.PointLight(gc, 0, 2);
     this._muzzleLight.position.set(0.22, -0.155, -0.67);
     this.weaponScene.add(this._muzzleLight);
 

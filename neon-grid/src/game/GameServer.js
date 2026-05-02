@@ -13,7 +13,11 @@ const SPAWN_POINTS = [
 const BOUNDS = 40;
 const HIT_RADIUS = 0.7;
 
-const WEAPON_DAMAGE = { SOLDIER: 25, GHOST: 15, WRAITH: 90 };
+const CLASSES = {
+  SOLDIER: { hp: 100, speed: 8,  damage: 25, fireRate: 200  },
+  GHOST:   { hp:  75, speed: 12, damage: 15, fireRate:  80  },
+  WRAITH:  { hp: 125, speed: 5,  damage: 90, fireRate: 1500 },
+};
 
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
@@ -54,6 +58,7 @@ class GameServer {
         const spawn = SPAWN_POINTS[this._spawnIndex % SPAWN_POINTS.length];
         this._spawnIndex++;
 
+        const cls = CLASSES[playerClass] || CLASSES.SOLDIER;
         const player = {
           id:       socket.id,
           userId,
@@ -61,7 +66,7 @@ class GameServer {
           class:    playerClass || 'SOLDIER',
           x: spawn.x, y: spawn.y, z: spawn.z,
           rotY: 0,
-          hp:     100,
+          hp:     cls.hp,
           kills:  0,
           deaths: 0,
           dead:   false,
@@ -89,7 +94,7 @@ class GameServer {
 
         const len = Math.sqrt(direction.x**2 + direction.y**2 + direction.z**2) || 1;
         const dir = { x: direction.x/len, y: direction.y/len, z: direction.z/len };
-        const damage = WEAPON_DAMAGE[weaponClass || shooter.class] || 25;
+        const damage = (CLASSES[weaponClass || shooter.class] || CLASSES.SOLDIER).damage;
 
         for (const [tid, target] of this.players) {
           if (tid === socket.id || target.dead) continue;
@@ -120,9 +125,10 @@ class GameServer {
 
             setTimeout(() => {
               if (!this.players.has(tid)) return;
-              const sp = SPAWN_POINTS[Math.floor(Math.random() * SPAWN_POINTS.length)];
-              Object.assign(target, { x: sp.x, y: sp.y, z: sp.z, hp: 100, dead: false });
-              this.io.emit('player:respawned', { id: tid, x: sp.x, y: sp.y, z: sp.z, hp: 100 });
+              const sp  = SPAWN_POINTS[Math.floor(Math.random() * SPAWN_POINTS.length)];
+              const hp  = (CLASSES[target.class] || CLASSES.SOLDIER).hp;
+              Object.assign(target, { x: sp.x, y: sp.y, z: sp.z, hp, dead: false });
+              this.io.emit('player:respawned', { id: tid, x: sp.x, y: sp.y, z: sp.z, hp });
             }, 3000);
           }
           break;

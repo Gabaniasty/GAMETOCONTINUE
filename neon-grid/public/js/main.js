@@ -87,7 +87,7 @@ game._animate = function () {
   const dt = Math.min(game._clock.getDelta(), 0.05);
   const { controls, camera } = game;
 
-  const speed = 8 * (controls.isSprinting() ? 1.5 : 1);
+  const speed = controls.getSpeed();
   const move  = controls.getMovementVector();
   camera.position.x += move.x * speed * dt;
   camera.position.z += move.z * speed * dt;

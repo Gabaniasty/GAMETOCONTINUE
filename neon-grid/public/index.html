@@ -59,10 +59,10 @@
 
     playBtn.addEventListener('click', () => {
       if (auth.isLoggedIn()) {
-        window.location.href = '/game.html';
+        window.location.href = '/class-select.html';
       } else {
         auth.showModal((username) => {
-          window.location.href = '/game.html';
+          window.location.href = '/class-select.html';
         });
       }
     });

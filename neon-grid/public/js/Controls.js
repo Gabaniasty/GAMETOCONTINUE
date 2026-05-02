@@ -1,3 +1,5 @@
+import { CLASSES } from './Classes.js';
+
 export class Controls {
   constructor(camera, domElement) {
     this.camera = camera;
@@ -15,14 +17,31 @@ export class Controls {
     this._overlay   = null;
     this._crosshair = null;
 
-    // Fallback mouse-delta tracking (no pointer lock)
     this._lastMouseX = null;
     this._lastMouseY = null;
+
+    // Class-based stats
+    this._playerClass  = localStorage.getItem('ng_class') || 'SOLDIER';
+    this._lastShotTime = 0;
 
     this._bindEvents();
   }
 
-  // Lazy-resolve overlay elements in case they aren't in DOM at construction time
+  // ── Class helpers ──────────────────────────────────────────────────
+  getSpeed() {
+    const base = CLASSES[this._playerClass]?.speed ?? 8;
+    return base * (this.isSprinting() ? 1.5 : 1);
+  }
+
+  _canShoot() {
+    const fireRate = CLASSES[this._playerClass]?.fireRate ?? 200;
+    const now = Date.now();
+    if (now - this._lastShotTime < fireRate) return false;
+    this._lastShotTime = now;
+    return true;
+  }
+
+  // ── Overlay helpers ────────────────────────────────────────────────
   _getOverlay()   { return this._overlay   || (this._overlay   = document.getElementById('lock-overlay')); }
   _getCrosshair() { return this._crosshair || (this._crosshair = document.getElementById('crosshair')); }
 
@@ -47,19 +66,17 @@ export class Controls {
   }
 
   _bindEvents() {
-    // ── Enter play on mousedown (fires before click, works inside iframes) ──
     document.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
       if (!this.isPlaying) {
         this._enter();
-        return; // don't shoot on the very first click that enters play mode
+        return; // first click enters play mode, doesn't shoot
       }
-      // Shoot on subsequent left-clicks
+      if (!this._canShoot()) return;
       console.log('SHOOT');
       if (this.onShoot) this.onShoot();
     });
 
-    // ── Also enter on first game-key press so keyboard users get in instantly ──
     document.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
 
@@ -78,17 +95,14 @@ export class Controls {
 
     document.addEventListener('keyup', (e) => { this.keys[e.code] = false; });
 
-    // ── Pointer lock change ──────────────────────────────────────
     document.addEventListener('pointerlockchange', () => {
       this.isLocked = document.pointerLockElement === this.domElement;
     });
 
-    // ── Mouse look ───────────────────────────────────────────────
     document.addEventListener('mousemove', (e) => {
       if (!this.isPlaying) return;
 
       let dx, dy;
-
       if (this.isLocked) {
         dx = e.movementX;
         dy = e.movementY;
