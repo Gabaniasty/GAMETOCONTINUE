@@ -204,7 +204,7 @@
 
     async function loadLeaderboard() {
       try {
-        const res  = await fetch('/api/leaderboard');
+        const res  = await fetch('/api/auth/leaderboard');
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const rows = await res.json();
 
@@ -214,14 +214,18 @@
           return;
         }
 
-        body.innerHTML = rows.map(r => {
+        body.innerHTML = rows.map((r, i) => {
+          const pos       = i + 1;
           const isCurrent = r.username.toLowerCase() === currentUser.toLowerCase();
+          const tierLabel = r.rank_division > 1
+            ? `${r.rank_tier} D${r.rank_division}`
+            : r.rank_tier;
           return `
             <div class="lb-row${isCurrent ? ' current-user' : ''}">
-              <span class="lb-rank ${rankClass(r.rank)}">#${r.rank}</span>
-              <span class="lb-username ${usernameClass(r.rank)}">${r.username}</span>
+              <span class="lb-rank ${rankClass(pos)}">#${pos}</span>
+              <span class="lb-username ${usernameClass(pos)}">${r.username}</span>
               <span>${r.level}</span>
-              <span>${r.xp.toLocaleString()}</span>
+              <span style="font-size:.75rem">${tierLabel}<br><span style="color:#00f5ff">${r.rank_points} RP</span></span>
               <span>${(r.kd_ratio || 0).toFixed(2)}</span>
               <span>${r.kills}</span>
             </div>

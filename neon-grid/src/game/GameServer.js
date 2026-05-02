@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const db  = require('../db/Database');
+const { calculateRPChange, getRankFromRP } = require('./RankSystem');
 
 const SECRET = process.env.JWT_SECRET || 'neon_grid_secret_change_in_prod';
 
@@ -77,9 +78,11 @@ class GameServer {
     this.mapAABBs     = ARENA_AABBS;
 
     // ── Round system ─────────────────────────────────────────────
-    this.gameState   = 'lobby';   // 'lobby' | 'playing' | 'results'
-    this.hostId      = null;
-    this._roundTimer = null;
+    this.gameState      = 'lobby';   // 'lobby' | 'playing' | 'results'
+    this.hostId         = null;
+    this._roundTimer    = null;
+    this._currentMatchId  = null;
+    this._roundStartTime  = 0;
   }
 
   isLineClearOfWalls(from, to) {
@@ -236,12 +239,7 @@ class GameServer {
             killerClass: shooter.class,
           });
 
-          if (shooter.userId) {
-            db.updateStats(shooter.userId, 1, 0, 100);
-            const newStats = db.getStats(shooter.userId);
-            if (newStats) socket.emit('player:xp_update', { xp: newStats.xp, level: newStats.level });
-          }
-          if (target.userId) db.updateStats(target.userId, 0, 1, 0);
+          // Stats are committed in bulk at round end; no per-kill DB writes.
 
           setTimeout(() => {
             if (!this.players.has(targetId)) return;
@@ -297,7 +295,19 @@ class GameServer {
 
   // ── Round lifecycle ──────────────────────────────────────────────
   _startRound() {
-    this.gameState = 'playing';
+    this.gameState       = 'playing';
+    this._roundStartTime = Date.now();
+
+    // Create match record and register authenticated players
+    try {
+      this._currentMatchId = db.createMatch('ARENA', 'DEATHMATCH');
+      for (const p of this.players.values()) {
+        if (p.userId) db.addMatchPlayer(this._currentMatchId, p.userId);
+      }
+    } catch (e) {
+      console.error('[DB] createMatch failed:', e.message);
+      this._currentMatchId = null;
+    }
 
     // Respawn all players with fresh stats
     for (const [, p] of this.players) {
@@ -324,6 +334,83 @@ class GameServer {
 
   _endRound() {
     this.gameState = 'results';
+
+    // ── Commit match stats to DB ────────────────────────────────
+    const matchId = this._currentMatchId;
+    if (matchId) {
+      try {
+        const duration = Math.round((Date.now() - this._roundStartTime) / 1000);
+
+        // Find winner (highest kills; ties broken by fewer deaths)
+        let winner = null;
+        for (const p of this.players.values()) {
+          if (!winner ||
+              p.kills > winner.kills ||
+              (p.kills === winner.kills && p.deaths < winner.deaths)) {
+            winner = p;
+          }
+        }
+        const winnerId = (winner && winner.userId) ? winner.userId : null;
+        db.finalizeMatch(matchId, winnerId, duration);
+
+        // Gather authenticated players and their current round-level rank points
+        // for the RP diff calculation
+        const authPlayers = Array.from(this.players.values()).filter(p => p.userId);
+
+        const rpMap = {};
+        for (const p of authPlayers) {
+          const r = db.getRank(p.userId);
+          rpMap[p.userId] = r ? r.rank_points : 0;
+        }
+
+        const avgRP = authPlayers.length > 0
+          ? authPlayers.reduce((s, p) => s + rpMap[p.userId], 0) / authPlayers.length
+          : 0;
+
+        for (const p of authPlayers) {
+          const won = (winner && p.id === winner.id);
+          const placement = won ? 1 : 2;
+
+          // RP calculation using this player's current RP vs opponents' avg
+          const opponentAvgRP = authPlayers.length > 1
+            ? (authPlayers.filter(op => op.userId !== p.userId)
+                         .reduce((s, op) => s + rpMap[op.userId], 0) /
+               (authPlayers.length - 1))
+            : avgRP;
+
+          const rpChange = calculateRPChange(
+            rpMap[p.userId], opponentAvgRP, won,
+            p.kills, p.deaths, 0,
+          );
+
+          db.updateStatsAfterMatch(p.userId, {
+            kills: p.kills, deaths: p.deaths,
+            assists: 0, headshots: 0,
+            shotsFired: 0, shotsHit: 0, damage: 0,
+            won, playtimeSeconds: duration,
+          });
+          db.updateRankPoints(p.userId, rpChange, won);
+          db.updateMatchPlayer(matchId, p.userId, {
+            kills: p.kills, deaths: p.deaths,
+            assists: 0, headshots: 0, damage: 0,
+            score: p.kills * 100,
+            placement, rpChange,
+          });
+
+          // Push updated stats to the player's socket
+          const sock = this.io.sockets.sockets.get(p.id);
+          if (sock) {
+            const newStats = db.getStats(p.userId);
+            const newRank  = db.getRank(p.userId);
+            sock.emit('player:stats_update', { stats: newStats, rank: newRank, rpChange });
+          }
+        }
+      } catch (e) {
+        console.error('[DB] _endRound commit failed:', e.message);
+      }
+      this._currentMatchId = null;
+    }
+
     this._broadcastLobbyState();
 
     // Return to lobby after 12 s, resetting round stats

@@ -143,7 +143,7 @@ export class Auth {
       submit.textContent = activeTab === 'login' ? 'LOGGING IN…' : 'REGISTERING…';
 
       try {
-        const res = await fetch(`/auth/${activeTab}`, {
+        const res = await fetch(`/api/auth/${activeTab}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username, password }),

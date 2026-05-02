@@ -19,21 +19,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.use('/auth', AuthRouter);
-
-// ── Public leaderboard ────────────────────────────────────────────
-app.get('/api/leaderboard', (req, res) => {
-  try { res.json(db.getLeaderboard()); }
-  catch (e) { res.status(500).json({ error: 'DB error' }); }
-});
-
-// ── Authenticated player stats + rank ─────────────────────────────
-app.get('/api/stats/me', verifyToken, (req, res) => {
-  const stats = db.getStats(req.user.userId);
-  const rank  = db.getUserRank(req.user.userId);
-  if (!stats) return res.status(404).json({ error: 'Stats not found' });
-  res.json({ stats, rank });
-});
+app.use('/api/auth', AuthRouter);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', players: io.engine.clientsCount });

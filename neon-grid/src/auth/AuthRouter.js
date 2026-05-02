@@ -68,7 +68,20 @@ router.get('/me', verifyToken, (req, res) => {
   const user  = db.getUserById(req.user.userId);
   if (!user)  return res.status(404).json({ error: 'User not found' });
   const stats = db.getStats(req.user.userId);
-  res.json({ username: user.username, stats });
+  const rank  = db.getRank(req.user.userId);
+  res.json({ username: user.username, userId: user.id, stats, rank });
+});
+
+// ── GET /api/auth/leaderboard ──────────────────────────────────
+router.get('/leaderboard', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 50, 100);
+  res.json(db.getLeaderboard(limit));
+});
+
+// ── GET /api/auth/match-history ────────────────────────────────
+router.get('/match-history', verifyToken, (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 10, 50);
+  res.json(db.getMatchHistory(req.user.userId, limit));
 });
 
 module.exports = { router, verifyToken, SECRET };
