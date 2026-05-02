@@ -131,6 +131,10 @@ class GameServer {
     this._currentMatchId  = null;
     this._roundStartTime  = 0;
 
+    // ── Kill-streak & announcements ───────────────────────────────
+    this._firstBloodFired = false;
+    this._killStreaks      = new Map();  // socketId → consecutive kill count
+
     // ── Matchmaker ───────────────────────────────────────────────
     this.matchmaker = new Matchmaker(io);
   }
@@ -297,6 +301,27 @@ class GameServer {
             killerClass: shooter.class,
           });
 
+          // ── Kill-streak & announcement logic ─────────────────
+          const streak = (this._killStreaks.get(socket.id) || 0) + 1;
+          this._killStreaks.set(socket.id, streak);
+          // Reset victim's streak
+          this._killStreaks.set(targetId, 0);
+
+          let announceType = null;
+          if (!this._firstBloodFired) {
+            this._firstBloodFired = true;
+            announceType = 'first_blood';
+          } else if (streak === 2) {
+            announceType = 'double_kill';
+          } else if (streak === 3) {
+            announceType = 'triple_kill';
+          } else if (streak >= 4) {
+            announceType = 'killing_spree';
+          }
+          if (announceType) {
+            this.io.emit('announcement', { type: announceType });
+          }
+
           // Stats are committed in bulk at round end; no per-kill DB writes.
 
           setTimeout(() => {
@@ -366,6 +391,10 @@ class GameServer {
     this.gameState       = 'playing';
     this._roundStartTime = Date.now();
 
+    // Reset announcement state for the new match
+    this._firstBloodFired = false;
+    this._killStreaks.clear();
+
     // Create match record and register authenticated players
     try {
       this._currentMatchId = db.createMatch('ARENA', 'DEATHMATCH');
@@ -394,6 +423,9 @@ class GameServer {
       if (s) s.emit('player:respawned', { id, x: p.x, y: p.y, z: p.z, hp: p.hp, class: p.class });
     }
 
+    // Announce match start to all players
+    this.io.emit('announcement', { type: 'match_start' });
+
     this._broadcastLobbyState();
 
     if (this._roundTimer) clearTimeout(this._roundTimer);
@@ -402,6 +434,7 @@ class GameServer {
 
   _endRound() {
     this.gameState = 'results';
+    this.io.emit('announcement', { type: 'match_end' });
 
     // ── Commit match stats to DB ────────────────────────────────
     const matchId = this._currentMatchId;

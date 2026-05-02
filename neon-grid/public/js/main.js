@@ -2,7 +2,7 @@ import { Game }         from './Game.js';
 import { Network }      from './Network.js';
 import { Hud }          from './Hud.js';
 import { BulletSystem } from './BulletSystem.js';
-import { SoundSystem }  from './SoundSystem.js';
+import { SoundEngine }  from './SoundEngine.js';
 import { CLASSES }      from './Classes.js';
 
 const localClass  = localStorage.getItem('ng_class') || 'SOLDIER';
@@ -14,7 +14,12 @@ const game    = new Game('gameCanvas');
 const network = new Network();
 const hud     = new Hud();
 const bullets = new BulletSystem(game.scene);
-const sound   = new SoundSystem();
+const sound   = new SoundEngine();
+
+// Resume / init audio context on any user gesture
+function _initAudio() { sound.init(); }
+document.addEventListener('mousedown', _initAudio, { once: true });
+document.addEventListener('keydown',   _initAudio, { once: true });
 
 // ── AWP weapon init (WRAITH class) ──────────────────────────────────
 if (localClass === 'WRAITH') {
@@ -45,6 +50,10 @@ network._socket.on('connect', () => {
 });
 
 // ── Shared shoot helper (fires raycast + network notify) ─────────────
+// Headshot detection: player sphere center is at ~y=0.8 for standing players
+// (eye level 1.65 - offset 0.85). Upper ~30% of sphere radius 0.7 → threshold 1.1.
+let _lastShotWasHeadshot = false;
+
 function _doFireShot() {
   const origin = {
     x: game.camera.position.x,
@@ -60,7 +69,19 @@ function _doFireShot() {
 
   const result = bullets.shoot(origin, direction, game.camera, barrelWorld);
   if (result.type === 'player') {
+    // Headshot: hit point is in the upper half of the player's sphere hitbox.
+    // Sphere center is at (targetY - 0.85); threshold is center + 0.1 (upper 57% of radius 0.7).
+    if (result.hitPoint) {
+      const target      = network.getRemotePlayers().find(p => p.id === result.playerId);
+      const targetEyeY  = target ? (target.y || 1.65) : 1.65;
+      const sphereCenter = targetEyeY - 0.85;
+      _lastShotWasHeadshot = result.hitPoint.y > sphereCenter + 0.1;
+    } else {
+      _lastShotWasHeadshot = false;
+    }
     network.sendShoot(origin, direction, result.playerId, result.distance);
+  } else {
+    _lastShotWasHeadshot = false;
   }
 }
 
@@ -99,7 +120,12 @@ if (localClass === 'WRAITH' && game._awpWeapon) {
 network.onHit = ({ targetId, damage, newHp }) => {
   hud.flashHit();
   hud.showHitMarker(false);
-  sound.playHitConfirm();
+  if (_lastShotWasHeadshot) {
+    sound.play_headshot_confirm();
+  } else {
+    sound.play_hit_confirm();
+  }
+  _lastShotWasHeadshot = false;
   const remote = network.getRemotePlayers().find(p => p.id === targetId);
   if (remote) {
     const hitPos = { x: remote.x, y: remote.y, z: remote.z };
@@ -110,7 +136,7 @@ network.onHit = ({ targetId, damage, newHp }) => {
 
 network.onDamaged = ({ shooterId, damage, newHp }) => {
   hud.setHp(newHp, maxHp);
-  sound.playTakeDamage();
+  sound.play_take_damage();
 };
 
 network.onKilled = ({ killerId, killerName, victimId, victimName, killerClass }) => {
@@ -120,13 +146,17 @@ network.onKilled = ({ killerId, killerName, victimId, victimName, killerClass })
   if (killerId === localId) {
     hud.showKillNotification();
     hud.showHitMarker(true);
-    sound.playKill();
+    sound.play_kill();
   }
 
   if (victimId === localId) {
     game.controls.isDead = true;
     hud.showDeathScreen(3, killerName);
   }
+};
+
+network.onAnnouncement = (type) => {
+  sound.playAnnouncement(type);
 };
 
 network.onRespawned = ({ id, x, y, z, hp }) => {
@@ -234,6 +264,7 @@ network.onLobbyState = ({ gameState, hostId, players, maxPlayers }) => {
     _lobbyOverlay.style.display = 'none';
     if (_cdTimer) { clearInterval(_cdTimer); _cdTimer = null; }
     game.controls.roundActive = true;
+    sound.startAmbient();
 
   } else if (gameState === 'results') {
     _lobbyStateLabel.textContent = 'ROUND OVER';
@@ -302,6 +333,14 @@ game._animate = function () {
   game.tickWeapon(dt);
   bullets.update(dt);
   bullets.updatePlayerHitboxes(network.getRemotePlayers());
+
+  // ── Footstep audio ────────────────────────────────────────────
+  if (controls.isPlaying && !controls.isDead) {
+    const hspd  = Math.sqrt(controls._vel.x ** 2 + controls._vel.z ** 2);
+    const moving = hspd > 0.5 && controls._onGround;
+    const surface = sound.detectSurface(game.collidableMeshes, camera.position);
+    sound.updateFootsteps(dt, moving, hspd, controls.isSprinting(), surface);
+  }
 
   hud.tickFps(dt);
   hud.updateMinimap(camera.position, network.getRemotePlayers());

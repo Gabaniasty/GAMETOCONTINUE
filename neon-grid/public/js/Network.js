@@ -16,7 +16,8 @@ export class Network {
     this.onXpUpdate   = null;
 
     // Round / lobby callbacks
-    this.onLobbyState = null;
+    this.onLobbyState   = null;
+    this.onAnnouncement = null;
 
     const storedName  = localStorage.getItem('ng_username');
     const storedClass = localStorage.getItem('ng_class');
@@ -71,6 +72,10 @@ export class Network {
 
     this._socket.on('game:lobby_state', (data) => {
       if (this.onLobbyState) this.onLobbyState(data);
+    });
+
+    this._socket.on('announcement', ({ type }) => {
+      if (this.onAnnouncement) this.onAnnouncement(type);
     });
 
     this._socket.on('game:full', ({ reason }) => {

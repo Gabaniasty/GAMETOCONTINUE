@@ -4,6 +4,20 @@ import { buildTerminalMap, TERMINAL_AABBS, LADDER_ZONES, CATWALK_EYE_Y, GROUND_E
 export { TERMINAL_AABBS as ARENA_AABBS };
 export { LADDER_ZONES, CATWALK_EYE_Y, GROUND_EYE_Y };
 
+// Classify each AABB box into a footstep surface type for SoundEngine.detectSurface()
+function _surfaceType(box) {
+  const w = box.maxX - box.minX;
+  const d = box.maxZ - box.minZ;
+  // Catwalk: high elevation, narrow X span (≤5 units), long Z span
+  if (box.minY >= 5.0 && w <= 5) return 'grate';
+  // Small walkable tops: cover boxes (maxY=1.5), server racks (maxY=3, very narrow),
+  // generator box — all metallic surfaces
+  if (box.maxY <= 1.5 && w <= 4 && d <= 4) return 'metal';
+  if (box.maxY <= 3.5 && w <= 1.5) return 'metal';
+  if (box.maxY <= 3.5 && d <= 1.5) return 'metal';
+  return 'concrete';
+}
+
 export class MapLoader {
   constructor(scene) {
     this.scene            = scene;
@@ -42,6 +56,7 @@ export class MapLoader {
         (box.minZ + box.maxZ) / 2,
       );
       mesh.userData.isMapGeometry = true;
+      mesh.userData.surface = _surfaceType(box);
       this.scene.add(mesh);
       this.collidableMeshes.push(mesh);
     }

@@ -73,7 +73,12 @@ export class BulletSystem {
 
     if (first.object.userData.isPlayerHitbox) {
       this._spawnTravelingBullet(originVec, dirVec, camera, first.distance, barrelPos);
-      return { type: 'player', playerId: first.object.userData.playerId, distance: first.distance };
+      return {
+        type:     'player',
+        playerId: first.object.userData.playerId,
+        distance: first.distance,
+        hitPoint: first.point,
+      };
     }
 
     this._spawnTravelingBullet(originVec, dirVec, camera, 200, barrelPos);

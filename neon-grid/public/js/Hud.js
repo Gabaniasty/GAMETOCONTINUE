@@ -51,6 +51,16 @@ export class Hud {
         0%   { transform:translate(-50%,-50%) scale(1.3); }
         100% { transform:translate(-50%,-50%) scale(1); }
       }
+      @keyframes announce-scale-in {
+        0%      { transform:translate(-50%,-50%) scale(1.3); opacity:0; }
+        7.41%   { opacity:1; transform:translate(-50%,-50%) scale(1); }
+        81.48%  { opacity:1; transform:translate(-50%,-50%) scale(1); }
+        100%    { opacity:0; transform:translate(-50%,-50%) scale(0.95); }
+      }
+      @keyframes spree-pulse {
+        0%,100% { text-shadow:0 0 24px #ff2d78, 0 0 50px #ff2d78; }
+        50%     { text-shadow:0 0 40px #ff2d78, 0 0 80px #ff2d78, 0 0 120px rgba(255,45,120,0.4); }
+      }
     `;
     document.head.appendChild(s);
   }
@@ -75,6 +85,7 @@ export class Hud {
     this._buildKillNotif(root);
     this._buildDeathScreen(root);
     this._buildScoreboard(root);
+    this._listenAnnouncements();
   }
 
   // ── Bottom-left: player info + segmented HP ─────────────────────────
@@ -552,5 +563,46 @@ export class Hud {
 
   hideScoreboard() {
     this._el.scoreboard.style.display = 'none';
+  }
+
+  // ── Announcement overlay ─────────────────────────────────────────────────
+  _listenAnnouncements() {
+    window.addEventListener('announcement', (e) => {
+      this._showAnnouncement(e.detail.type);
+    });
+  }
+
+  _showAnnouncement(type) {
+    const CONFIG = {
+      first_blood:   { label: 'FIRST BLOOD',   color: '#ff2d78', shadow: '#ff2d78', pulse: false },
+      double_kill:   { label: 'DOUBLE KILL',    color: '#ffd700', shadow: '#ffd700', pulse: false },
+      triple_kill:   { label: 'TRIPLE KILL',    color: '#ff8c00', shadow: '#ff8c00', pulse: false },
+      killing_spree: { label: 'KILLING SPREE',  color: '#ff2d78', shadow: '#ff2d78', pulse: true  },
+      match_start:   { label: 'MATCH START',    color: '#00f5ff', shadow: '#00f5ff', pulse: false },
+      match_end:     { label: 'MATCH OVER',     color: '#e0e0ff', shadow: '#e0e0ff', pulse: false },
+    };
+    const cfg = CONFIG[type] || { label: type.toUpperCase(), color: '#e0e0ff', shadow: '#e0e0ff', pulse: false };
+    const TOTAL = 2.7;
+
+    const el = document.createElement('div');
+    el.style.cssText = [
+      'position:absolute',
+      'top:50%',
+      'left:50%',
+      'transform:translate(-50%,-50%) scale(1.3)',
+      `color:${cfg.color}`,
+      `text-shadow:0 0 24px ${cfg.shadow}, 0 0 50px ${cfg.shadow}`,
+      'font-size:clamp(1.8rem,5vw,3.2rem)',
+      'font-weight:900',
+      'letter-spacing:.28em',
+      'white-space:nowrap',
+      'pointer-events:none',
+      'opacity:0',
+      `animation:announce-scale-in ${TOTAL}s ease forwards${cfg.pulse ? ', spree-pulse 0.7s ease-in-out infinite' : ''}`,
+      'z-index:500',
+    ].join(';');
+    el.textContent = cfg.label;
+    this._el.root.appendChild(el);
+    setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, TOTAL * 1000 + 100);
   }
 }
