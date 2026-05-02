@@ -1,4 +1,5 @@
-import { CLASSES } from './Classes.js';
+import { CLASSES }     from './Classes.js';
+import { ARENA_AABBS } from './MapLoader.js';
 
 // ── Movement constants ────────────────────────────────────────────────────
 const EYE_Y        = 1.65;
@@ -21,8 +22,9 @@ const SPRINT_BOB_AMT = 0.024;
 const WALK_SWAY      = 0.006;
 const SPRINT_SWAY    = 0.010;
 
-// ── Wall collision push distance ──────────────────────────────────────────
-const WALL_DIST = 0.45;
+// ── Collision constants ────────────────────────────────────────────────────
+const PLAYER_RADIUS = 0.42;  // horizontal body half-width (square footprint)
+const GROUND_MARGIN = 0.55;  // how far above a surface top the feet can be and still land
 
 export class Controls {
   constructor(camera, domElement) {
@@ -49,8 +51,9 @@ export class Controls {
     this._bobTimer    = 0;
     this._crouching   = false;
     this._jumpHeld    = false;
-    this._onGround    = true;     // last-frame ground state
+    this._onGround    = true;
 
+    // Legacy — kept so existing callers (bullets) still work
     this.collidableMeshes = [];
 
     this._playerClass  = localStorage.getItem('ng_class') || 'SOLDIER';
@@ -59,6 +62,7 @@ export class Controls {
     this._bindEvents();
   }
 
+  // Kept for API compatibility — bullets still use mesh raycasts
   setCollidableMeshes(meshes) { this.collidableMeshes = meshes; }
 
   // ── Fire rate gate ───────────────────────────────────────────────────────
@@ -70,16 +74,16 @@ export class Controls {
     return true;
   }
 
-  // ── Main physics update (exact order from spec) ──────────────────────────
+  // ── Main physics update ──────────────────────────────────────────────────
   update(camera, dt) {
     if (!this.isPlaying) return;
 
-    // ── Step 0: crouch lerp (speed 12/s) ─────────────────────────────────
+    // Step 0: crouch lerp
     this._crouching = !!(this.keys['KeyC'] || this.keys['ControlLeft'] || this.keys['ControlRight']);
     const targetEyeY = this._crouching ? CROUCH_Y : EYE_Y;
     this._currentEyeY += (targetEyeY - this._currentEyeY) * Math.min(1, 12 * dt);
 
-    // ── Step 1: read input ────────────────────────────────────────────────
+    // Step 1: read input
     let ix = 0, iz = 0;
     if (!this.isDead) {
       if (this.keys['KeyW'] || this.keys['ArrowUp'])    iz -= 1;
@@ -90,19 +94,16 @@ export class Controls {
     const hasInput = ix !== 0 || iz !== 0;
     if (hasInput) { const len = Math.sqrt(ix * ix + iz * iz); ix /= len; iz /= len; }
 
-    // Camera-space wish direction (horizontal only — no pitch)
     const cos   = Math.cos(this.yaw), sin = Math.sin(this.yaw);
-    const wishX = ix * cos + iz * sin;
+    const wishX =  ix * cos + iz * sin;
     const wishZ = -ix * sin + iz * cos;
 
-    // Sprint: Shift + grounded + moving forward only
-    const onGround  = this._onGround;
-    const sprinting = this.isSprinting() && onGround && !this._crouching && iz < -0.1;
+    const onGround   = this._onGround;
+    const sprinting  = this.isSprinting() && onGround && !this._crouching && iz < -0.1;
     const targetSpeed = this._crouching ? CROUCH_SPEED : sprinting ? SPRINT_SPEED : WALK_SPEED;
 
-    // ── Step 2+3: acceleration / gravity ─────────────────────────────────
+    // Step 2+3: acceleration / gravity
     if (onGround) {
-      // XZ acceleration
       if (hasInput) {
         const k = Math.min(1, GROUND_ACCEL * dt);
         this._vel.x += (wishX * targetSpeed - this._vel.x) * k;
@@ -112,19 +113,16 @@ export class Controls {
         this._vel.x *= fric;
         this._vel.z *= fric;
       }
-
-      // CRITICAL: enforce vel.y = 0 every grounded frame, no exceptions
       this._vel.y = 0;
 
-      // Jump
       if (!this.isDead && this.keys['Space'] && !this._jumpHeld) {
         this._vel.y    = JUMP_FORCE;
         this._jumpHeld = true;
+        this._onGround = false;
       }
       if (!this.keys['Space']) this._jumpHeld = false;
 
     } else {
-      // Airborne XZ
       this._vel.x += wishX * AIR_ACCEL * dt;
       this._vel.z += wishZ * AIR_ACCEL * dt;
       const hs = Math.sqrt(this._vel.x ** 2 + this._vel.z ** 2);
@@ -132,35 +130,21 @@ export class Controls {
         this._vel.x = (this._vel.x / hs) * AIR_SPEED;
         this._vel.z = (this._vel.z / hs) * AIR_SPEED;
       }
-
-      // Gravity ONLY when airborne
       this._vel.y += GRAVITY * dt;
     }
 
-    // ── Step 4: move camera ───────────────────────────────────────────────
+    // Step 4: integrate position
     camera.position.x += this._vel.x * dt;
     camera.position.z += this._vel.z * dt;
     camera.position.y += this._vel.y * dt;
 
-    // ── Step 5: ground detection ──────────────────────────────────────────
-    if (this.collidableMeshes.length > 0) {
-      this._onGround = this._doGroundCheck(camera);
-    } else {
-      // Fallback: flat arena floor at y = 0
-      const floorY = this._currentEyeY;
-      this._onGround = camera.position.y <= floorY + 0.15;
-      if (camera.position.y < floorY) {
-        camera.position.y = floorY;
-        if (this._vel.y < 0) this._vel.y = 0;
-      }
-    }
+    // Step 5: wall collision (AABB) — push before ground check
+    this._doWallsAABB(camera);
 
-    // ── Step 6: wall collision ────────────────────────────────────────────
-    if (this.collidableMeshes.length > 0) {
-      this._doWallCheck(camera);
-    }
+    // Step 6: ground detection (AABB)
+    this._onGround = this._doGroundAABB(camera);
 
-    // ── Step 7: head bob (applied on top of final snapped Y) ─────────────
+    // Step 7: head bob
     const hspd = Math.sqrt(this._vel.x ** 2 + this._vel.z ** 2);
     if (hspd > 0.5 && this._onGround && !this._crouching && !this.isDead) {
       this._bobTimer += dt * (sprinting ? SPRINT_BOB_SPD : WALK_BOB_SPD);
@@ -169,59 +153,108 @@ export class Controls {
       camera.position.y += bobY;
       camera.position.x += bobX;
     } else {
-      // Smoothly return bob to nearest zero-crossing — no jarring cut
       const nearest = Math.round(this._bobTimer / Math.PI) * Math.PI;
       this._bobTimer += (nearest - this._bobTimer) * Math.min(1, dt * 8);
     }
   }
 
-  // ── Ground detection: spec Section 1 ────────────────────────────────────
-  // Ray from just above feet (camera.y - eyeHeight + 0.1), maxLength 0.25.
-  // Hard snap on hit — NO lerp.
-  _doGroundCheck(camera) {
-    const eyeY  = this._currentEyeY;
-    const origin = new THREE.Vector3(
-      camera.position.x,
-      camera.position.y - eyeY + 0.1,   // 0.1 above feet
-      camera.position.z
-    );
-    const ray  = new THREE.Raycaster(origin, new THREE.Vector3(0, -1, 0), 0, 0.25);
-    const hits = ray.intersectObjects(this.collidableMeshes, false);
+  // ── Ground check (AABB) ──────────────────────────────────────────────────
+  // Finds the highest AABB top-surface below the player's feet and snaps.
+  // Also uses the flat arena floor at y = 0.
+  _doGroundAABB(camera) {
+    const px    = camera.position.x;
+    const pz    = camera.position.z;
+    const feetY = camera.position.y - this._currentEyeY;
+    const R     = PLAYER_RADIUS;
 
-    if (hits.length > 0) {
-      // Hard snap — camera sits exactly at surface + eyeHeight
-      camera.position.y = hits[0].point.y + eyeY;
+    let groundY = -Infinity;
+
+    // Flat floor at y = 0 (always present)
+    if (feetY <= GROUND_MARGIN) {
+      groundY = 0;
+    }
+
+    // AABB top surfaces
+    for (const box of ARENA_AABBS) {
+      // Player XZ footprint must overlap AABB XZ
+      if (px + R <= box.minX || px - R >= box.maxX) continue;
+      if (pz + R <= box.minZ || pz - R >= box.maxZ) continue;
+      // Feet must be just above (or slightly inside) the top surface
+      if (feetY > box.maxY + GROUND_MARGIN) continue;
+      if (feetY < box.maxY - 0.15) continue;  // too far below top — inside the box, skip
+      groundY = Math.max(groundY, box.maxY);
+    }
+
+    if (groundY > -Infinity) {
+      // Hard snap + zero downward vel
+      const snapY = groundY + this._currentEyeY;
+      if (camera.position.y < snapY + 0.01) {
+        camera.position.y = snapY;
+        if (this._vel.y < 0) this._vel.y = 0;
+      }
+      return camera.position.y <= snapY + 0.02;
+    }
+
+    // Prevent falling through the absolute world floor
+    const absFloor = this._currentEyeY - 0.01;
+    if (camera.position.y < absFloor) {
+      camera.position.y = absFloor;
       if (this._vel.y < 0) this._vel.y = 0;
       return true;
     }
+
     return false;
   }
 
-  // ── Horizontal wall push-back ────────────────────────────────────────────
-  _doWallCheck(camera) {
-    const fwd   = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
-    const right = new THREE.Vector3( Math.cos(this.yaw), 0, -Math.sin(this.yaw));
-    const dirs  = [fwd, fwd.clone().negate(), right, right.clone().negate()];
+  // ── Wall collision (AABB) ────────────────────────────────────────────────
+  // Expands each AABB by PLAYER_RADIUS and pushes the player out along the
+  // axis of minimum penetration.  Runs twice per frame to resolve corners.
+  _doWallsAABB(camera) {
+    this._resolveWalls(camera);
+    this._resolveWalls(camera);
+  }
 
-    // Cast from chest height to avoid floor slabs triggering lateral push
-    const origin = new THREE.Vector3(
-      camera.position.x,
-      camera.position.y - this._currentEyeY * 0.45,
-      camera.position.z
-    );
+  _resolveWalls(camera) {
+    const R     = PLAYER_RADIUS;
+    const feetY = camera.position.y - this._currentEyeY;
+    const headY = camera.position.y + 0.25;
 
-    for (const dir of dirs) {
-      const ray  = new THREE.Raycaster(origin, dir, 0, WALL_DIST);
-      const hits = ray.intersectObjects(this.collidableMeshes, false);
-      if (hits.length > 0 && hits[0].distance < WALL_DIST) {
-        const push = WALL_DIST - hits[0].distance;
-        camera.position.x -= dir.x * push;
-        camera.position.z -= dir.z * push;
-        const dotV = this._vel.x * dir.x + this._vel.z * dir.z;
-        if (dotV > 0) {
-          this._vel.x -= dotV * dir.x;
-          this._vel.z -= dotV * dir.z;
-        }
+    for (const box of ARENA_AABBS) {
+      // Vertical overlap — skip if player is sitting on top of or completely below this box
+      if (feetY >= box.maxY - 0.05) continue;   // standing on top — not a wall
+      if (headY <= box.minY)         continue;   // completely below — shouldn't happen
+
+      const px = camera.position.x;
+      const pz = camera.position.z;
+
+      // Expanded AABB faces (player treated as axis-aligned square)
+      const eMinX = box.minX - R, eMaxX = box.maxX + R;
+      const eMinZ = box.minZ - R, eMaxZ = box.maxZ + R;
+
+      // Is player centre inside the expanded box on both axes?
+      if (px <= eMinX || px >= eMaxX) continue;
+      if (pz <= eMinZ || pz >= eMaxZ) continue;
+
+      // Penetration depth along each face
+      const dL = px - eMinX;   // depth past left face
+      const dR = eMaxX - px;   // depth past right face
+      const dF = pz - eMinZ;   // depth past front face
+      const dB = eMaxZ - pz;   // depth past back face
+
+      const minPen = Math.min(dL, dR, dF, dB);
+
+      if (minPen === dL) {
+        camera.position.x = eMinX;
+        if (this._vel.x > 0) this._vel.x = 0;
+      } else if (minPen === dR) {
+        camera.position.x = eMaxX;
+        if (this._vel.x < 0) this._vel.x = 0;
+      } else if (minPen === dF) {
+        camera.position.z = eMinZ;
+        if (this._vel.z > 0) this._vel.z = 0;
+      } else {
+        camera.position.z = eMaxZ;
+        if (this._vel.z < 0) this._vel.z = 0;
       }
     }
   }
