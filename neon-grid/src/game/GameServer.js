@@ -14,9 +14,9 @@ const BOUNDS = 40;
 const HIT_RADIUS = 0.7;
 
 const CLASSES = {
-  SOLDIER: { hp: 100, speed: 8,  damage: 25, fireRate: 200  },
-  GHOST:   { hp:  75, speed: 12, damage: 15, fireRate:  80  },
-  WRAITH:  { hp: 125, speed: 5,  damage: 90, fireRate: 1500 },
+  SOLDIER: { hp: 100, speed: 5.5, damage: 28, fireRate:   97 },
+  GHOST:   { hp:  75, speed: 8.5, damage: 16, fireRate:   67 },
+  WRAITH:  { hp: 125, speed: 3.5, damage: 95, fireRate: 1333 },
 };
 
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -34,6 +34,21 @@ class GameServer {
     this.players = new Map();
     this._spawnIndex  = 0;
     this._tickInterval = null;
+  }
+
+  // Pick spawn point farthest from all alive players
+  _getFarthestSpawn() {
+    const alive = Array.from(this.players.values()).filter(p => !p.dead);
+    if (!alive.length) return SPAWN_POINTS[this._spawnIndex++ % SPAWN_POINTS.length];
+    let best = SPAWN_POINTS[0], bestDist = -1;
+    for (const sp of SPAWN_POINTS) {
+      const minDist = Math.min(...alive.map(p => {
+        const dx = sp.x - p.x, dz = sp.z - p.z;
+        return Math.sqrt(dx * dx + dz * dz);
+      }));
+      if (minDist > bestDist) { bestDist = minDist; best = sp; }
+    }
+    return best;
   }
 
   start() {
@@ -98,6 +113,7 @@ class GameServer {
 
         for (const [tid, target] of this.players) {
           if (tid === socket.id || target.dead) continue;
+          if (target.spawnProtection) continue;
           if (!raySphereHit(origin, dir, target.x, target.y, target.z, HIT_RADIUS)) continue;
 
           target.hp = Math.max(0, target.hp - damage);
@@ -105,21 +121,24 @@ class GameServer {
           socket.emit('player:hit', { targetId: tid, damage, newHp: target.hp });
 
           const targetSocket = this.io.sockets.sockets.get(tid);
-          if (targetSocket) targetSocket.emit('player:damaged', { shooterId: socket.id, damage, newHp: target.hp });
-
-          console.log(`${shooter.username} hit ${target.username} for ${damage} (${target.hp} HP left)`);
+          if (targetSocket) {
+            targetSocket.emit('player:damaged', {
+              shooterId: socket.id, damage, newHp: target.hp,
+              hitPos: { x: target.x, y: target.y, z: target.z },
+            });
+          }
 
           if (target.hp <= 0) {
-            target.dead   = true;
+            target.dead = true;
             target.deaths++;
             shooter.kills++;
 
             this.io.emit('player:killed', {
-              killerId:   socket.id,   killerName: shooter.username,
-              victimId:   tid,         victimName: target.username,
+              killerId:    socket.id,          killerName:  shooter.username,
+              victimId:    tid,                victimName:  target.username,
+              killerClass: shooter.class,
             });
 
-            // Persist stats to DB for authenticated players
             if (shooter.userId) {
               db.updateStats(shooter.userId, 1, 0, 100);
               const newStats = db.getStats(shooter.userId);
@@ -129,10 +148,15 @@ class GameServer {
 
             setTimeout(() => {
               if (!this.players.has(tid)) return;
-              const sp  = SPAWN_POINTS[Math.floor(Math.random() * SPAWN_POINTS.length)];
-              const hp  = (CLASSES[target.class] || CLASSES.SOLDIER).hp;
-              Object.assign(target, { x: sp.x, y: sp.y, z: sp.z, hp, dead: false });
-              this.io.emit('player:respawned', { id: tid, x: sp.x, y: sp.y, z: sp.z, hp });
+              const sp = this._getFarthestSpawn();
+              const hp = (CLASSES[target.class] || CLASSES.SOLDIER).hp;
+              Object.assign(target, { x: sp.x, y: sp.y, z: sp.z, hp, dead: false, spawnProtection: true });
+              this.io.emit('player:respawned', {
+                id: tid, x: sp.x, y: sp.y, z: sp.z, hp, class: target.class,
+              });
+              setTimeout(() => {
+                if (this.players.has(tid)) this.players.get(tid).spawnProtection = false;
+              }, 2500);
             }, 3000);
           }
           break;

@@ -41,6 +41,16 @@ export class Hud {
         0%,100% { opacity:1; }
         50%     { opacity:0.6; }
       }
+      @keyframes death-glitch {
+        0%,100% { text-shadow:0 0 20px #ff2d78,0 0 40px rgba(255,45,120,.5); transform:none; }
+        8%      { text-shadow:4px 0 #ff2d78,0 0 40px #ff2d78; transform:translateX(-4px); }
+        16%     { text-shadow:-4px 0 #00f5ff,0 0 40px #ff2d78; transform:translateX(4px); }
+        24%     { text-shadow:none; transform:none; }
+      }
+      @keyframes crosshair-hit {
+        0%   { transform:translate(-50%,-50%) scale(1.3); }
+        100% { transform:translate(-50%,-50%) scale(1); }
+      }
     `;
     document.head.appendChild(s);
   }
@@ -218,19 +228,30 @@ export class Hud {
     const ds = this._el.deathScreen = document.createElement('div');
     ds.style.cssText = `
       position:absolute; inset:0;
-      background:rgba(180,0,0,.32);
+      background:rgba(0,0,0,0.7);
       display:none; flex-direction:column;
-      align-items:center; justify-content:center; gap:1rem;
+      align-items:center; justify-content:center; gap:.9rem;
     `;
     const dTitle = document.createElement('div');
     dTitle.style.cssText = `
       font-size:clamp(2rem,6vw,4rem); font-weight:900; letter-spacing:.25em;
-      color:#ff2d78; text-shadow:0 0 20px #ff2d78, 0 0 40px rgba(255,45,120,.5);
+      color:#ff2d78; animation:death-glitch 1.8s ease-in-out infinite;
     `;
-    dTitle.textContent = 'YOU DIED';
+    dTitle.textContent = 'YOU WERE ELIMINATED';
+
+    const dKiller = this._el.deathKiller = document.createElement('div');
+    dKiller.style.cssText = `
+      font-size:.9rem; letter-spacing:.2em; color:#e0e0ff;
+      text-shadow:0 0 8px rgba(224,224,255,0.3);
+    `;
+
     const dTimer = this._el.deathTimer = document.createElement('div');
-    dTimer.style.cssText = 'font-size:1rem; letter-spacing:.2em; color:#e0e0ff;';
-    ds.append(dTitle, dTimer);
+    dTimer.style.cssText = `
+      font-size:.72rem; letter-spacing:.22em;
+      color:rgba(224,224,255,0.45); margin-top:.5rem;
+    `;
+
+    ds.append(dTitle, dKiller, dTimer);
     root.appendChild(ds);
   }
 
@@ -369,17 +390,34 @@ export class Hud {
     this._killNotifTimer = setTimeout(() => { el.style.opacity = '0'; }, 2000);
   }
 
-  showDeathScreen(seconds = 3) {
+  showDeathScreen(seconds = 3, killerName = '') {
     this._dead = true;
     const ds = this._el.deathScreen;
     ds.style.display = 'flex';
+
+    if (this._el.deathKiller) {
+      this._el.deathKiller.textContent =
+        killerName ? `KILLED BY: ${killerName.toUpperCase()}` : '';
+    }
+
     let remaining = seconds;
-    this._el.deathTimer.textContent = `Respawning in ${remaining}…`;
+    const tick = () => {
+      if (remaining > 0) {
+        let dots = '';
+        for (let i = 0; i < remaining; i++) dots += `${remaining - i}... `;
+        this._el.deathTimer.textContent = `RESPAWNING IN ${dots.trim()}`;
+      }
+    };
+    tick();
     if (this._respawnTimer) clearInterval(this._respawnTimer);
     this._respawnTimer = setInterval(() => {
       remaining--;
-      if (remaining <= 0) clearInterval(this._respawnTimer);
-      else this._el.deathTimer.textContent = `Respawning in ${remaining}…`;
+      if (remaining <= 0) {
+        clearInterval(this._respawnTimer);
+        this._el.deathTimer.textContent = 'RESPAWNING…';
+      } else {
+        tick();
+      }
     }, 1000);
   }
 
@@ -387,6 +425,31 @@ export class Hud {
     this._dead = false;
     this._el.deathScreen.style.display = 'none';
     if (this._respawnTimer) clearInterval(this._respawnTimer);
+  }
+
+  // Hit marker — flashes the crosshair lines pink (hit) or white+skull (kill)
+  showHitMarker(isKill = false) {
+    const ch = document.getElementById('crosshair');
+    if (!ch) return;
+
+    const col = isKill ? '#ffffff' : '#ff2d78';
+    const dur = isKill ? 300 : 150;
+
+    // Inject a temporary override style
+    if (!this._hitStyleEl) {
+      this._hitStyleEl = document.createElement('style');
+      document.head.appendChild(this._hitStyleEl);
+    }
+    this._hitStyleEl.textContent = `
+      #crosshair::before, #crosshair::after { background:${col} !important; }
+      #crosshair-dot { background:${col} !important; box-shadow:0 0 8px ${col}; }
+      #crosshair { animation:crosshair-hit ${dur}ms ease-out forwards; }
+    `;
+
+    clearTimeout(this._hitMarkerTimer);
+    this._hitMarkerTimer = setTimeout(() => {
+      if (this._hitStyleEl) this._hitStyleEl.textContent = '';
+    }, dur);
   }
 
   // ── FPS ──────────────────────────────────────────────────────────────

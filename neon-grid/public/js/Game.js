@@ -1,5 +1,6 @@
 import { Controls }           from './Controls.js';
 import { buildCharacterModel } from './CharacterModel.js';
+import { buildWeapon }         from './WeaponBuilder.js';
 
 const CLASS_COLORS = {
   SOLDIER: 0x00f5ff,
@@ -18,7 +19,7 @@ export class Game {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
-    this.renderer.autoClear         = false; // we clear manually to composite scenes
+    this.renderer.autoClear         = false;
 
     // ── Main scene & camera ───────────────────────────────────────
     this.scene  = new THREE.Scene();
@@ -26,24 +27,22 @@ export class Game {
     this.scene.fog        = new THREE.FogExp2(0x0a0a0f, 0.05);
 
     this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 200);
-    this.camera.position.set(0, 1.6, 0);
+    this.camera.position.set(0, 1.65, 0);
 
     // ── Controls ──────────────────────────────────────────────────
     this.controls = new Controls(this.camera, this.canvas);
 
     // ── Local player class ─────────────────────────────────────────
     const localClass = localStorage.getItem('ng_class') || 'SOLDIER';
+    this._localClass      = localClass;
     this._localClassColor = CLASS_COLORS[localClass] || 0x00f5ff;
-
-    // ── Physics ───────────────────────────────────────────────────
-    this.yVelocity  = 0;
-    this.onGround   = true;
-    this.GRAVITY    = -20;
-    this.JUMP_FORCE = 7;
-    this.FLOOR_Y    = 1.6;
 
     // ── Remote players ────────────────────────────────────────────
     this._remoteMeshes = new Map();
+    this._dyingModels  = [];
+
+    // ── Spawn protection shield ────────────────────────────────────
+    this._spawnShield = null;
 
     // ── Transient VFX ─────────────────────────────────────────────
     this._vfxObjects = [];
@@ -115,52 +114,21 @@ export class Game {
     this.weaponScene  = new THREE.Scene();
     this.weaponCamera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 10);
 
-    // Lighting for weapon scene
     this.weaponScene.add(new THREE.AmbientLight(0x334466, 3));
-    const wLight = new THREE.PointLight(0x00f5ff, 1.5, 5);
+    const wLight = new THREE.PointLight(this._localClassColor, 1.5, 5);
     wLight.position.set(0, 1, 0);
     this.weaponScene.add(wLight);
 
-    const gc  = this._localClassColor;
-    const gm  = (color, emissive, intensity) =>
-      new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: intensity });
-
-    this._gunGroup = new THREE.Group();
-
-    // Slide / body
-    this._gunGroup.add(Object.assign(
-      new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.28), gm(0x1a1a2e, gc, 0.5))
-    ));
-
-    // Barrel
-    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.18), gm(0x1a1a2e, gc, 0.7));
-    barrel.position.set(0, 0.025, -0.23);
-    this._gunGroup.add(barrel);
-
-    // Handle
-    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.12, 0.07), gm(0x111122, gc, 0.2));
-    handle.position.set(0, -0.095, 0.07);
-    this._gunGroup.add(handle);
-
-    // Trigger
-    const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.06, 0.02), gm(0x333344, gc, 0.3));
-    trigger.position.set(0, -0.03, -0.02);
-    this._gunGroup.add(trigger);
-
-    // Muzzle tip
-    const muzzleTip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.01), gm(gc, gc, 1.0));
-    muzzleTip.position.set(0, 0.025, -0.32);
-    this._gunGroup.add(muzzleTip);
-
-    // Base transform — bottom-right of view
-    this._GUN_BASE = { x: 0.22, y: -0.18, z: -0.35, rx: 0.04, rz: -0.05 };
-    this._gunGroup.position.set(0.22, -0.18, -0.35);
-    this._gunGroup.rotation.set(0.04, 0, -0.05);
+    // Build class-specific weapon from WeaponBuilder
+    this._gunGroup = buildWeapon(this._localClass);
+    this._GUN_BASE = { x: 0.2, y: -0.22, z: -0.35, rx: 0.03, rz: -0.04 };
+    this._gunGroup.position.set(0.2, -0.22, -0.35);
+    this._gunGroup.rotation.set(0.03, 0, -0.04);
     this.weaponScene.add(this._gunGroup);
 
-    // Muzzle flash point light (off by default)
-    this._muzzleLight = new THREE.PointLight(gc, 0, 2);
-    this._muzzleLight.position.set(0.22, -0.155, -0.67);
+    // Muzzle flash point light
+    this._muzzleLight = new THREE.PointLight(this._localClassColor, 0, 2);
+    this._muzzleLight.position.set(0.2, -0.195, -0.72);
     this.weaponScene.add(this._muzzleLight);
 
     // Muzzle flash sprite
@@ -169,11 +137,10 @@ export class Game {
       new THREE.PlaneGeometry(0.12, 0.12),
       new THREE.MeshBasicMaterial({ map: flashTex, transparent: true, depthWrite: false, side: THREE.DoubleSide })
     );
-    this._muzzleFlashSprite.position.set(0.22, -0.155, -0.67);
+    this._muzzleFlashSprite.position.set(0.2, -0.195, -0.72);
     this._muzzleFlashSprite.visible = false;
     this.weaponScene.add(this._muzzleFlashSprite);
 
-    // Recoil / flash timers
     this._recoilElapsed    = -1;
     this._weaponFlashTimer = 0;
   }
@@ -191,7 +158,6 @@ export class Game {
     return new THREE.CanvasTexture(c);
   }
 
-  // Call this when the local player fires
   triggerRecoil() {
     this._recoilElapsed    = 0;
     this._weaponFlashTimer = 0.06;
@@ -199,21 +165,18 @@ export class Game {
     this._muzzleLight.intensity     = 8;
   }
 
-  // Called every frame from main loop
   tickWeapon(dt) {
-    const { _GUN_BASE: b } = this;
-
+    const b = this._GUN_BASE;
     if (this._recoilElapsed >= 0) {
       this._recoilElapsed += dt;
       const t = this._recoilElapsed;
-
       if (t < 0.015) {
         const p = t / 0.015;
         this._gunGroup.position.z = b.z + 0.05 * p;
         this._gunGroup.rotation.x = b.rx - 0.08 * p;
       } else if (t < 0.05) {
         const p = (t - 0.015) / 0.035;
-        this._gunGroup.position.z = (b.z + 0.05) + (-0.05) * p;
+        this._gunGroup.position.z = (b.z + 0.05) - 0.05 * p;
         this._gunGroup.rotation.x = (b.rx - 0.08) + 0.08 * p;
       } else {
         this._gunGroup.position.z = b.z;
@@ -221,7 +184,6 @@ export class Game {
         this._recoilElapsed = -1;
       }
     }
-
     if (this._weaponFlashTimer > 0) {
       this._weaponFlashTimer -= dt;
       if (this._weaponFlashTimer <= 0) {
@@ -232,68 +194,99 @@ export class Game {
     }
   }
 
-  // Renders the weapon overlay — call AFTER rendering the main scene
   renderWeapon() {
     this.renderer.clearDepth();
     this.renderer.render(this.weaponScene, this.weaponCamera);
   }
 
   // ── Remote players ────────────────────────────────────────────────
-  _makeNameSprite(username, color) {
-    const c   = document.createElement('canvas');
-    c.width   = 256; c.height = 64;
-    const ctx = c.getContext('2d');
-    ctx.clearRect(0, 0, 256, 64);
-    ctx.font         = 'bold 28px Orbitron, monospace';
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'middle';
-    const hex = '#' + color.toString(16).padStart(6, '0');
-    ctx.shadowColor = hex; ctx.shadowBlur = 12;
-    ctx.fillStyle   = hex;
-    ctx.fillText(username, 128, 32);
-    const tex    = new THREE.CanvasTexture(c);
-    const mat    = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
-    const sprite = new THREE.Sprite(mat);
-    sprite.scale.set(2.5, 0.625, 1);
-    return sprite;
-  }
-
   _createRemoteMesh(player) {
     const color = CLASS_COLORS[player.class] || 0x00f5ff;
-    const group = buildCharacterModel(color);
-    const label = this._makeNameSprite(player.username, color);
-    label.position.y = 2.2;
-    group.add(label);
+    const group = buildCharacterModel(color, player.class, player.username, player.level || 1);
     this.scene.add(group);
     return group;
   }
 
   updateRemotePlayers(players, dt = 0.016) {
     const seen = new Set();
+
     players.forEach((p) => {
       seen.add(p.id);
       let g = this._remoteMeshes.get(p.id);
+
+      // Newly dead — trigger fall animation, hand off to dying list
+      if (p.dead) {
+        if (g && !g.neon_dying) {
+          g.neon_playDeath();
+          this._dyingModels.push(g);
+          this._remoteMeshes.delete(p.id);
+        }
+        return;
+      }
+
+      // Alive — create model if missing (handles fresh spawns after death)
       if (!g) {
         g = this._createRemoteMesh(p);
-        // Snap to initial position on first creation
-        g.position.set(p.x, p.y - 1.6, p.z);
+        g.position.set(p.x, (p.y || 1.65) - 1.65, p.z);
         this._remoteMeshes.set(p.id, g);
       }
-      // Lerp toward server position at ~10 units/s
-      const tx = p.x, ty = p.y - 1.6, tz = p.z;
+
+      // Lerp toward server position
       const k  = Math.min(1, 10 * dt);
-      g.position.x += (tx - g.position.x) * k;
-      g.position.y += (ty - g.position.y) * k;
-      g.position.z += (tz - g.position.z) * k;
-      g.rotation.y  = p.rotY;
-      g.visible     = !p.dead;
+      const ty = (p.y || 1.65) - 1.65;
+      g.position.x += (p.x  - g.position.x) * k;
+      g.position.y += (ty   - g.position.y) * k;
+      g.position.z += (p.z  - g.position.z) * k;
+      g.rotation.y  = p.rotY || 0;
+
+      // Update floating HP bar
+      if (g.neon_setHp && p.hp !== undefined) {
+        const MAX_HP = { SOLDIER: 100, GHOST: 75, WRAITH: 125 };
+        g.neon_setHp(p.hp, MAX_HP[p.class] || 100);
+      }
     });
+
+    // Tick falling/fading death animations
+    for (let i = this._dyingModels.length - 1; i >= 0; i--) {
+      const g = this._dyingModels[i];
+      if (g.neon_updateDeath(dt)) {
+        this.scene.remove(g);
+        this._dyingModels.splice(i, 1);
+      }
+    }
+
+    // Prune disconnected players
     this._remoteMeshes.forEach((g, id) => {
       if (!seen.has(id)) { this.scene.remove(g); this._remoteMeshes.delete(id); }
     });
   }
 
-  // ── Visual FX (world-space) ────────────────────────────────────────
+  // ── Spawn protection shield ───────────────────────────────────────
+  showSpawnProtection() {
+    this.hideSpawnProtection();
+    const geo = new THREE.SphereGeometry(1.0, 12, 12);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x00f5ff, transparent: true, opacity: 0.08, wireframe: true,
+    });
+    this._spawnShield = new THREE.Mesh(geo, mat);
+    this.scene.add(this._spawnShield);
+    setTimeout(() => this.hideSpawnProtection(), 2500);
+  }
+
+  hideSpawnProtection() {
+    if (this._spawnShield) {
+      this.scene.remove(this._spawnShield);
+      this._spawnShield = null;
+    }
+  }
+
+  tickSpawnShield(camera) {
+    if (!this._spawnShield) return;
+    this._spawnShield.position.copy(camera.position);
+    this._spawnShield.material.opacity = 0.08 + Math.sin(Date.now() * 0.008) * 0.06;
+  }
+
+  // ── Visual FX ─────────────────────────────────────────────────────
   spawnTracer(origin, direction) {
     const pts = [
       new THREE.Vector3(origin.x, origin.y, origin.z),
@@ -308,15 +301,15 @@ export class Game {
   }
 
   spawnMuzzleFlash(camera) {
-    const fwd = new THREE.Vector3(0, 0, -0.5).applyQuaternion(camera.quaternion);
-    const light = new THREE.PointLight(0x00f5ff, 6, 4);
+    const fwd   = new THREE.Vector3(0, 0, -0.5).applyQuaternion(camera.quaternion);
+    const light = new THREE.PointLight(this._localClassColor, 6, 4);
     light.position.copy(camera.position).add(fwd);
     this.scene.add(light);
     this._vfxObjects.push({ mesh: light, ttl: 0.08, type: 'light' });
   }
 
   spawnHitParticles(position) {
-    [0xff2d78, 0x00f5ff, 0xff2d78, 0x00f5ff, 0xff2d78, 0x00f5ff, 0xff2d78, 0x00f5ff].forEach((col) => {
+    [0xff2d78, 0x00f5ff, 0xff2d78, 0x00f5ff, 0xff2d78, 0x00f5ff].forEach((col) => {
       const mat  = new THREE.MeshBasicMaterial({ color: col, transparent: true });
       const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.06, 4, 4), mat);
       mesh.position.set(position.x, position.y, position.z);
@@ -372,26 +365,8 @@ export class Game {
     const dt = Math.min(this._clock.getDelta(), 0.05);
     const { controls, camera } = this;
 
-    const speed = 8 * (controls.isSprinting() ? 1.5 : 1);
-    const move  = controls.getMovementVector();
-    camera.position.x += move.x * speed * dt;
-    camera.position.z += move.z * speed * dt;
+    controls.update(camera, dt);
     this._clampToWalls(camera.position);
-
-    if (controls.isJumping() && this.onGround) {
-      this.yVelocity = this.JUMP_FORCE;
-      this.onGround  = false;
-    }
-    if (!this.onGround) {
-      this.yVelocity     += this.GRAVITY * dt;
-      camera.position.y  += this.yVelocity * dt;
-      if (camera.position.y <= this.FLOOR_Y) {
-        camera.position.y = this.FLOOR_Y;
-        this.yVelocity    = 0;
-        this.onGround     = true;
-      }
-    }
-
     controls.applyToCamera();
     this._tickVfx(dt);
     this.tickWeapon(dt);

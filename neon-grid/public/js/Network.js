@@ -22,10 +22,11 @@ export class Network {
 
     this._socket.on('connect', () => {
       this._localId = this._socket.id;
-      console.log(`[Network] Connected as ${this._localId}`);
+      const token = localStorage.getItem('neon_token') || null;
       this._socket.emit('player:join', {
         username: this._username,
         class: this._playerClass,
+        token,
       });
     });
 
