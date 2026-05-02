@@ -18,6 +18,14 @@ const sound   = new SoundSystem();
 
 hud.setHp(maxHp, maxHp);
 
+// ── Barrel tip positions in weapon-camera local space ───────────────
+// Gun group base: (0.2, -0.22, -0.35). Each value is base + muzzle offset.
+const BARREL_TIP = {
+  SOLDIER: new THREE.Vector3(0.2, -0.205, -0.83),   // AK47 muzzle tip
+  GHOST:   new THREE.Vector3(0.2, -0.204, -0.633),  // SMG muzzle tip
+  WRAITH:  new THREE.Vector3(0.2, -0.204, -0.908),  // Sniper muzzle brake tip
+};
+
 // ── Start sending position on connect ──────────────────────────────
 network._socket.on('connect', () => {
   network.startSendingPosition(game.camera);
@@ -36,8 +44,13 @@ game.controls.onShoot = () => {
   sound.playGunshot(weaponSound);
   game.triggerRecoil();
 
+  // Transform barrel tip from weapon-camera local → world space for visual spawn
+  const btLocal    = (BARREL_TIP[localClass] || BARREL_TIP.SOLDIER).clone();
+  btLocal.applyQuaternion(game.camera.quaternion);
+  const barrelWorld = game.camera.position.clone().add(btLocal);
+
   // Client-side raycast — determines what (if anything) the bullet hits
-  const result = bullets.shoot(origin, direction, game.camera);
+  const result = bullets.shoot(origin, direction, game.camera, barrelWorld);
 
   if (result.type === 'player') {
     // A player is hit and no wall was between us — notify server for authoritative damage
@@ -100,9 +113,13 @@ network.onXpUpdate = ({ xp, level }) => {
   hud.setXp(xp, level);
 };
 
-// ── Tab: scoreboard ────────────────────────────────────────────────
+// ── Tab: scoreboard (other players only, sorted by kills) ──────────
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'Tab') { e.preventDefault(); hud.showScoreboard(network.getRemotePlayers()); }
+  if (e.code === 'Tab') {
+    e.preventDefault();
+    const sorted = [...network.getRemotePlayers()].sort((a, b) => (b.kills || 0) - (a.kills || 0));
+    hud.showScoreboard(sorted);
+  }
 });
 document.addEventListener('keyup', (e) => {
   if (e.code === 'Tab') hud.hideScoreboard();
@@ -121,6 +138,105 @@ network.onKilled = (...args) => {
   if (game.controls.isScoped) game.controls.isScoped = false;
   if (_origOnKilled) _origOnKilled(...args);
 };
+
+// ── Lobby overlay ─────────────────────────────────────────────────
+const _lobbyOverlay   = document.getElementById('lobby-overlay');
+const _lobbyList      = document.getElementById('lobby-players-list');
+const _lobbyHeader    = document.getElementById('lobby-players-header');
+const _lobbyStartBtn  = document.getElementById('lobby-start-btn');
+const _lobbyHint      = document.getElementById('lobby-hint');
+const _lobbyStateLabel = document.getElementById('lobby-state-label');
+const _lobbyResults   = document.getElementById('lobby-results');
+const _resultsScores  = document.getElementById('results-scores');
+const _lobbyCountdown = document.getElementById('lobby-countdown');
+
+const _CC = { SOLDIER: '#00f5ff', GHOST: '#ff2d78', WRAITH: '#7b2fff' };
+let _cdTimer = null;
+
+network.onLobbyState = ({ gameState, hostId, players, maxPlayers }) => {
+  const localId = network.getLocalId();
+  const isHost  = hostId === localId;
+
+  // ── Rebuild player list ─────────────────────────────────────────
+  _lobbyHeader.textContent = `OPERATIVES [${players.length} / ${maxPlayers}]`;
+  _lobbyList.innerHTML = '';
+  players.forEach((p) => {
+    const isMe = p.id === localId;
+    const isH  = p.id === hostId;
+    const col  = _CC[p.class] || '#00f5ff';
+    const row  = document.createElement('div');
+    row.className = 'lobby-player-row';
+    row.innerHTML = `
+      <span class="lpr-name" style="color:${col}">${p.username.toUpperCase()}${isH ? ' ★' : ''}${isMe ? ' (YOU)' : ''}</span>
+      <span class="lpr-class">${p.class}</span>
+      <span class="lpr-kd">${p.kills}K / ${p.deaths}D</span>
+    `;
+    _lobbyList.appendChild(row);
+  });
+
+  if (gameState === 'lobby') {
+    _lobbyStateLabel.textContent = players.length >= maxPlayers ? 'ROUND STARTING…' : 'LOBBY';
+    _lobbyResults.style.display  = 'none';
+    _lobbyOverlay.style.display  = 'flex';
+    _lobbyStartBtn.style.display = isHost ? 'block' : 'none';
+    _lobbyHint.textContent = isHost
+      ? `YOU ARE HOST — CLICK START WHEN READY (${players.length}/${maxPlayers})`
+      : 'WAITING FOR HOST TO START THE ROUND…';
+    _lobbyHint.style.display = 'block';
+    if (_cdTimer) { clearInterval(_cdTimer); _cdTimer = null; }
+    game.controls.roundActive = false;
+    if (document.pointerLockElement) document.exitPointerLock();
+
+  } else if (gameState === 'playing') {
+    _lobbyOverlay.style.display = 'none';
+    if (_cdTimer) { clearInterval(_cdTimer); _cdTimer = null; }
+    game.controls.roundActive = true;
+
+  } else if (gameState === 'results') {
+    _lobbyStateLabel.textContent = 'ROUND OVER';
+    _lobbyResults.style.display  = 'block';
+    _lobbyStartBtn.style.display = 'none';
+    _lobbyHint.style.display     = 'none';
+    _lobbyOverlay.style.display  = 'flex';
+    game.controls.roundActive    = false;
+    if (document.pointerLockElement) document.exitPointerLock();
+
+    // Results table sorted by kills
+    const sorted = [...players].sort((a, b) => (b.kills || 0) - (a.kills || 0));
+    _resultsScores.innerHTML = '';
+    const medals = ['①', '②', '③'];
+    sorted.forEach((p, i) => {
+      const isMe = p.id === localId;
+      const col  = _CC[p.class] || '#00f5ff';
+      const row  = document.createElement('div');
+      row.className = 'results-row';
+      row.innerHTML = `
+        <span class="rr-rank">${medals[i] || (i + 1)}</span>
+        <span class="rr-name" style="color:${col}">${p.username.toUpperCase()}${isMe ? ' ★' : ''}</span>
+        <span class="rr-class">${p.class}</span>
+        <span class="rr-kills">${p.kills}K</span>
+        <span class="rr-deaths">${p.deaths}D</span>
+      `;
+      _resultsScores.appendChild(row);
+    });
+
+    // Countdown timer back to lobby
+    let secs = 12;
+    _lobbyCountdown.textContent = `RETURNING TO LOBBY IN ${secs}s…`;
+    if (_cdTimer) clearInterval(_cdTimer);
+    _cdTimer = setInterval(() => {
+      secs--;
+      if (secs <= 0) {
+        clearInterval(_cdTimer); _cdTimer = null;
+        _lobbyCountdown.textContent = '';
+      } else {
+        _lobbyCountdown.textContent = `RETURNING TO LOBBY IN ${secs}s…`;
+      }
+    }, 1000);
+  }
+};
+
+_lobbyStartBtn.addEventListener('click', () => network.sendStartRound());
 
 // ── Patched game loop ──────────────────────────────────────────────
 game._animate = function () {

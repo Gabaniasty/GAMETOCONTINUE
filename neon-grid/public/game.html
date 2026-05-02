@@ -185,6 +185,163 @@
       text-shadow: 0 0 8px rgba(123, 47, 255, 0.5);
     }
 
+    /* ── Lobby / Round overlay ── */
+    #lobby-overlay {
+      display: flex;
+      position: fixed;
+      inset: 0;
+      z-index: 800;
+      background: rgba(1, 1, 12, 0.96);
+      backdrop-filter: blur(12px);
+      align-items: center;
+      justify-content: center;
+      font-family: 'Orbitron', monospace;
+    }
+
+    #lobby-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      width: 520px;
+      max-width: 92vw;
+    }
+
+    #lobby-title {
+      font-size: clamp(2rem, 6vw, 3.2rem);
+      font-weight: 900;
+      letter-spacing: 0.35em;
+      color: #00f5ff;
+      text-shadow: 0 0 18px #00f5ff, 0 0 40px rgba(0,245,255,0.4);
+      margin: 0;
+    }
+
+    #lobby-subtitle {
+      font-size: 0.52rem;
+      letter-spacing: 0.45em;
+      color: rgba(0, 245, 255, 0.35);
+      margin-top: -10px;
+    }
+
+    #lobby-state-label {
+      font-size: 0.62rem;
+      letter-spacing: 0.3em;
+      padding: 4px 20px;
+      border: 1px solid rgba(123, 47, 255, 0.5);
+      color: #7b2fff;
+      text-shadow: 0 0 8px #7b2fff;
+      box-shadow: 0 0 16px rgba(123, 47, 255, 0.12);
+    }
+
+    #lobby-players-section {
+      width: 100%;
+      border: 1px solid rgba(0, 245, 255, 0.15);
+      background: rgba(0, 10, 30, 0.6);
+    }
+
+    #lobby-players-header {
+      font-size: 0.5rem;
+      letter-spacing: 0.25em;
+      color: rgba(0, 245, 255, 0.5);
+      padding: 6px 14px;
+      border-bottom: 1px solid rgba(0, 245, 255, 0.1);
+    }
+
+    #lobby-players-list {
+      max-height: 240px;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+
+    .lobby-player-row {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      padding: 5px 14px;
+      gap: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .lobby-player-row:last-child { border-bottom: none; }
+
+    .lpr-name  { font-size: 0.56rem; letter-spacing: 0.12em; }
+    .lpr-class { font-size: 0.5rem;  letter-spacing: 0.12em; color: rgba(180,180,220,0.45); text-align: right; }
+    .lpr-kd    { font-size: 0.5rem;  letter-spacing: 0.12em; color: rgba(180,180,220,0.35); text-align: right; }
+
+    #lobby-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #lobby-start-btn {
+      display: none;
+      padding: 10px 48px;
+      background: transparent;
+      border: 1.5px solid #00f5ff;
+      color: #00f5ff;
+      font-family: 'Orbitron', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.3em;
+      cursor: pointer;
+      text-shadow: 0 0 8px #00f5ff;
+      box-shadow: 0 0 20px rgba(0, 245, 255, 0.15);
+      transition: background 0.15s, box-shadow 0.15s;
+    }
+
+    #lobby-start-btn:hover {
+      background: rgba(0, 245, 255, 0.08);
+      box-shadow: 0 0 32px rgba(0, 245, 255, 0.35);
+    }
+
+    #lobby-hint {
+      font-size: 0.46rem;
+      letter-spacing: 0.2em;
+      color: rgba(180, 180, 220, 0.3);
+      text-align: center;
+    }
+
+    #lobby-results {
+      width: 100%;
+      border: 1px solid rgba(123, 47, 255, 0.25);
+      background: rgba(5, 0, 20, 0.6);
+    }
+
+    #results-title {
+      font-size: 0.56rem;
+      letter-spacing: 0.25em;
+      color: #7b2fff;
+      text-shadow: 0 0 10px #7b2fff;
+      padding: 8px 14px;
+      border-bottom: 1px solid rgba(123, 47, 255, 0.15);
+    }
+
+    #results-scores { padding: 6px 0; }
+
+    .results-row {
+      display: grid;
+      grid-template-columns: 0.4fr 2fr 1fr 1fr 1fr;
+      padding: 5px 14px;
+      gap: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      font-size: 0.52rem;
+      letter-spacing: 0.1em;
+    }
+
+    .results-row:last-child { border-bottom: none; }
+    .rr-rank   { color: rgba(200, 200, 255, 0.4); }
+    .rr-class  { color: rgba(180, 180, 220, 0.45); text-align: right; }
+    .rr-kills  { color: rgba(200, 230, 255, 0.85); text-align: right; }
+    .rr-deaths { color: rgba(180, 180, 220, 0.45); text-align: right; }
+
+    #lobby-countdown {
+      font-size: 0.48rem;
+      letter-spacing: 0.2em;
+      color: rgba(0, 245, 255, 0.4);
+      padding: 6px 14px;
+      text-align: center;
+    }
+
     /* ── Crosshair ── */
     #crosshair {
       display: none;
@@ -275,6 +432,31 @@
     <div id="scope-ring"></div>
     <div id="scope-lens-glare"></div>
     <div id="scope-info">6× · ION SNIPER</div>
+  </div>
+
+  <!-- Lobby / Round overlay -->
+  <div id="lobby-overlay">
+    <div id="lobby-content">
+      <h1 id="lobby-title">NEON GRID</h1>
+      <div id="lobby-subtitle">TACTICAL ARENA · CYBERPUNK FPS</div>
+      <div id="lobby-state-label">LOBBY</div>
+
+      <div id="lobby-players-section">
+        <div id="lobby-players-header">OPERATIVES [0 / 10]</div>
+        <div id="lobby-players-list"></div>
+      </div>
+
+      <div id="lobby-actions">
+        <button id="lobby-start-btn">START ROUND</button>
+        <div id="lobby-hint">WAITING FOR HOST TO START THE ROUND…</div>
+      </div>
+
+      <div id="lobby-results" style="display:none">
+        <div id="results-title">ROUND COMPLETE — INITIATING DEBRIEF</div>
+        <div id="results-scores"></div>
+        <div id="lobby-countdown"></div>
+      </div>
+    </div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>

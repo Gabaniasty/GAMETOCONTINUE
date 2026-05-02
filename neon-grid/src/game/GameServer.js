@@ -14,8 +14,10 @@ const SPAWN_POINTS = [
   { x:  30, y: 1.6, z:   0 },
 ];
 
-const BOUNDS     = 40;
-const HIT_RADIUS = 0.7;
+const BOUNDS        = 40;
+const HIT_RADIUS    = 0.7;
+const MAX_PLAYERS   = 10;
+const ROUND_DURATION = 5 * 60 * 1000; // 5 minutes
 
 const CLASSES = {
   SOLDIER: { hp: 100, speed: 5.5, damage: 28, fireRate:   97 },
@@ -24,22 +26,17 @@ const CLASSES = {
 };
 
 // Arena wall/cover AABBs matching generate-arena.js output
-// Each entry: { minX, maxX, minY, maxY, minZ, maxZ }
 const ARENA_AABBS = [
-  // Outer walls
-  { minX: -40,   maxX:  40,   minY: 0, maxY: 6, minZ: -40.5, maxZ: -39.5 }, // WallN
-  { minX: -40,   maxX:  40,   minY: 0, maxY: 6, minZ:  39.5, maxZ:  40.5 }, // WallS
-  { minX: -40.5, maxX: -39.5, minY: 0, maxY: 6, minZ: -40,   maxZ:  40   }, // WallW
-  { minX:  39.5, maxX:  40.5, minY: 0, maxY: 6, minZ: -40,   maxZ:  40   }, // WallE
-  // Centre corridor walls
-  { minX:  -8.5, maxX:  -7.5, minY: 0, maxY: 4, minZ: -25,   maxZ:  25   }, // CorridorL
-  { minX:   7.5, maxX:   8.5, minY: 0, maxY: 4, minZ: -25,   maxZ:  25   }, // CorridorR
-  // Partial cross-walls
-  { minX: -31,   maxX:  -9,   minY: 0, maxY: 4, minZ: -20.5, maxZ: -19.5 }, // BlockNW
-  { minX:   9,   maxX:  31,   minY: 0, maxY: 4, minZ: -20.5, maxZ: -19.5 }, // BlockNE
-  { minX: -31,   maxX:  -9,   minY: 0, maxY: 4, minZ:  19.5, maxZ:  20.5 }, // BlockSW
-  { minX:   9,   maxX:  31,   minY: 0, maxY: 4, minZ:  19.5, maxZ:  20.5 }, // BlockSE
-  // Cover crates
+  { minX: -40,   maxX:  40,   minY: 0, maxY: 6, minZ: -40.5, maxZ: -39.5 },
+  { minX: -40,   maxX:  40,   minY: 0, maxY: 6, minZ:  39.5, maxZ:  40.5 },
+  { minX: -40.5, maxX: -39.5, minY: 0, maxY: 6, minZ: -40,   maxZ:  40   },
+  { minX:  39.5, maxX:  40.5, minY: 0, maxY: 6, minZ: -40,   maxZ:  40   },
+  { minX:  -8.5, maxX:  -7.5, minY: 0, maxY: 4, minZ: -25,   maxZ:  25   },
+  { minX:   7.5, maxX:   8.5, minY: 0, maxY: 4, minZ: -25,   maxZ:  25   },
+  { minX: -31,   maxX:  -9,   minY: 0, maxY: 4, minZ: -20.5, maxZ: -19.5 },
+  { minX:   9,   maxX:  31,   minY: 0, maxY: 4, minZ: -20.5, maxZ: -19.5 },
+  { minX: -31,   maxX:  -9,   minY: 0, maxY: 4, minZ:  19.5, maxZ:  20.5 },
+  { minX:   9,   maxX:  31,   minY: 0, maxY: 4, minZ:  19.5, maxZ:  20.5 },
   { minX: -16.5, maxX: -13.5, minY: 0, maxY: 2, minZ: -16.5, maxZ: -13.5 },
   { minX:  13.5, maxX:  16.5, minY: 0, maxY: 2, minZ: -16.5, maxZ: -13.5 },
   { minX: -16.5, maxX: -13.5, minY: 0, maxY: 2, minZ:  13.5, maxZ:  16.5 },
@@ -48,19 +45,16 @@ const ARENA_AABBS = [
   { minX:  -1.5, maxX:   1.5, minY: 0, maxY: 2, minZ:  23.5, maxZ:  26.5 },
   { minX: -26.5, maxX: -23.5, minY: 0, maxY: 2, minZ:  -1.5, maxZ:   1.5 },
   { minX:  23.5, maxX:  26.5, minY: 0, maxY: 2, minZ:  -1.5, maxZ:   1.5 },
-  // Corner pillars
   { minX: -36,   maxX: -34,   minY: 0, maxY: 6, minZ: -36,   maxZ: -34   },
   { minX:  34,   maxX:  36,   minY: 0, maxY: 6, minZ: -36,   maxZ: -34   },
   { minX: -36,   maxX: -34,   minY: 0, maxY: 6, minZ:  34,   maxZ:  36   },
   { minX:  34,   maxX:  36,   minY: 0, maxY: 6, minZ:  34,   maxZ:  36   },
-  // Elevated platforms
   { minX: -24,   maxX: -16,   minY: 0, maxY: 1, minZ: -24,   maxZ: -16   },
   { minX:  16,   maxX:  24,   minY: 0, maxY: 1, minZ:  16,   maxZ:  24   },
 ];
 
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
-// Slab-method ray-AABB intersection — returns hit distance or Infinity
 function rayAABBDist(ro, rd, box) {
   const invDx = 1 / (rd.x || 1e-10);
   const invDy = 1 / (rd.y || 1e-10);
@@ -76,14 +70,18 @@ function rayAABBDist(ro, rd, box) {
 
 class GameServer {
   constructor(io) {
-    this.io = io;
+    this.io           = io;
     this.players      = new Map();
     this._spawnIndex  = 0;
     this._tickInterval = null;
     this.mapAABBs     = ARENA_AABBS;
+
+    // ── Round system ─────────────────────────────────────────────
+    this.gameState   = 'lobby';   // 'lobby' | 'playing' | 'results'
+    this.hostId      = null;
+    this._roundTimer = null;
   }
 
-  // Check whether a straight line from `from` to `to` is unobstructed by walls
   isLineClearOfWalls(from, to) {
     const dir  = { x: to.x - from.x, y: to.y - from.y, z: to.z - from.z };
     const dist = Math.sqrt(dir.x ** 2 + dir.y ** 2 + dir.z ** 2);
@@ -96,7 +94,6 @@ class GameServer {
     return true;
   }
 
-  // Pick spawn point farthest from all alive players
   _getFarthestSpawn() {
     const alive = Array.from(this.players.values()).filter(p => !p.dead);
     if (!alive.length) return SPAWN_POINTS[this._spawnIndex++ % SPAWN_POINTS.length];
@@ -116,6 +113,12 @@ class GameServer {
       console.log(`Player connected: ${socket.id}`);
 
       socket.on('player:join', ({ username, class: playerClass, token }) => {
+        // ── Max players check ────────────────────────────────────
+        if (this.players.size >= MAX_PLAYERS) {
+          socket.emit('game:full', { reason: 'Session is full (max 10 players).' });
+          return;
+        }
+
         let resolvedUsername = username || `Ghost_${socket.id.slice(0, 4)}`;
         let userId = null;
 
@@ -144,11 +147,24 @@ class GameServer {
         };
 
         this.players.set(socket.id, player);
+
+        // Assign host to first player
+        if (!this.hostId) this.hostId = socket.id;
+
         console.log(`Player joined: ${player.username} (${player.class})`);
-        setTimeout(() => { if (this.players.has(socket.id)) this.players.get(socket.id).spawnProtection = false; }, 2500);
+        setTimeout(() => {
+          if (this.players.has(socket.id)) this.players.get(socket.id).spawnProtection = false;
+        }, 2500);
 
         socket.emit('game:state', { players: this._getPlayersArray() });
         socket.broadcast.emit('game:state', { players: this._getPlayersArray() });
+
+        this._broadcastLobbyState();
+
+        // Auto-start when session is full
+        if (this.players.size >= MAX_PLAYERS && this.gameState === 'lobby') {
+          this._startRound();
+        }
       });
 
       socket.on('player:move', ({ x, y, z, rotY }) => {
@@ -160,18 +176,19 @@ class GameServer {
         p.rotY = rotY;
       });
 
-      // ── Shoot handler (targetId-based with wall validation) ────────
+      // ── Shoot handler ────────────────────────────────────────────
       socket.on('player:shoot', ({ origin, direction, weaponClass, targetId, distance }) => {
+        // No damage outside an active round
+        if (this.gameState !== 'playing') return;
+
         const shooter = this.players.get(socket.id);
         if (!shooter || shooter.dead) return;
 
-        // No targetId — bullet missed all players (or hit a wall). Nothing to do.
         if (!targetId) return;
 
         const target = this.players.get(targetId);
         if (!target || target.dead || target.spawnProtection) return;
 
-        // ── Anti-cheat checks ──────────────────────────────────────
         if (distance > 250) return;
 
         const posDiff = Math.sqrt(
@@ -181,11 +198,9 @@ class GameServer {
         );
         if (posDiff > 6) return;
 
-        // Wall occlusion check
         const targetCenter = { x: target.x, y: target.y + 0.8, z: target.z };
         if (!this.isLineClearOfWalls(origin, targetCenter)) return;
 
-        // Direction dot-product check (must aim within ~32° of target)
         const toTarget = {
           x: targetCenter.x - origin.x,
           y: targetCenter.y - origin.y,
@@ -197,7 +212,6 @@ class GameServer {
                     (toTarget.z / len) * direction.z;
         if (dot < 0.85) return;
 
-        // ── All checks passed — apply damage ──────────────────────
         const damage = (CLASSES[weaponClass || shooter.class] || CLASSES.SOLDIER).damage;
         target.hp    = Math.max(0, target.hp - damage);
 
@@ -244,11 +258,32 @@ class GameServer {
         }
       });
 
+      // ── Host starts the round ────────────────────────────────────
+      socket.on('game:start', () => {
+        if (socket.id !== this.hostId) return;
+        if (this.gameState !== 'lobby') return;
+        this._startRound();
+      });
+
       socket.on('disconnect', () => {
         const p = this.players.get(socket.id);
         if (p) console.log(`Player left: ${p.username} (${socket.id})`);
         this.players.delete(socket.id);
         this.io.emit('player:left', { id: socket.id });
+
+        // Reassign host to next available player
+        if (this.hostId === socket.id) {
+          const next = this.players.keys().next();
+          this.hostId = next.done ? null : next.value;
+        }
+
+        // Reset state if everyone left
+        if (this.players.size === 0) {
+          this.gameState = 'lobby';
+          if (this._roundTimer) { clearTimeout(this._roundTimer); this._roundTimer = null; }
+        }
+
+        this._broadcastLobbyState();
       });
     });
 
@@ -260,8 +295,66 @@ class GameServer {
     console.log('GameServer started (20 tick/s)');
   }
 
+  // ── Round lifecycle ──────────────────────────────────────────────
+  _startRound() {
+    this.gameState = 'playing';
+
+    // Respawn all players with fresh stats
+    for (const [, p] of this.players) {
+      const sp = this._getFarthestSpawn();
+      const hp = (CLASSES[p.class] || CLASSES.SOLDIER).hp;
+      Object.assign(p, { x: sp.x, y: sp.y, z: sp.z, hp, dead: false, kills: 0, deaths: 0, spawnProtection: true });
+      const id = p.id;
+      setTimeout(() => {
+        if (this.players.has(id)) this.players.get(id).spawnProtection = false;
+      }, 2500);
+    }
+
+    // Tell each client to respawn
+    for (const [id, p] of this.players) {
+      const s = this.io.sockets.sockets.get(id);
+      if (s) s.emit('player:respawned', { id, x: p.x, y: p.y, z: p.z, hp: p.hp, class: p.class });
+    }
+
+    this._broadcastLobbyState();
+
+    if (this._roundTimer) clearTimeout(this._roundTimer);
+    this._roundTimer = setTimeout(() => this._endRound(), ROUND_DURATION);
+  }
+
+  _endRound() {
+    this.gameState = 'results';
+    this._broadcastLobbyState();
+
+    // Return to lobby after 12 s, resetting round stats
+    setTimeout(() => {
+      for (const p of this.players.values()) {
+        p.kills = 0; p.deaths = 0;
+        const sp = this._getFarthestSpawn();
+        const hp = (CLASSES[p.class] || CLASSES.SOLDIER).hp;
+        Object.assign(p, { x: sp.x, y: sp.y, z: sp.z, hp, dead: false });
+      }
+      this.gameState = 'lobby';
+      this._broadcastLobbyState();
+    }, 12000);
+  }
+
+  _broadcastLobbyState() {
+    const data = {
+      gameState:   this.gameState,
+      hostId:      this.hostId,
+      playerCount: this.players.size,
+      maxPlayers:  MAX_PLAYERS,
+      players: Array.from(this.players.values()).map(p => ({
+        id: p.id, username: p.username, class: p.class,
+        kills: p.kills, deaths: p.deaths, dead: p.dead, hp: p.hp,
+      })),
+    };
+    this.io.emit('game:lobby_state', data);
+  }
+
   _getPlayersArray() { return Array.from(this.players.values()); }
-  stop() { if (this._tickInterval) clearInterval(this._tickInterval); }
+  stop()             { if (this._tickInterval) clearInterval(this._tickInterval); }
 }
 
 module.exports = { GameServer };

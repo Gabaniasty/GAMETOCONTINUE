@@ -14,6 +14,9 @@ export class Network {
     this.onRespawned  = null;
     this.onXpUpdate   = null;
 
+    // Round / lobby callbacks
+    this.onLobbyState = null;
+
     const storedName  = localStorage.getItem('ng_username');
     const storedClass = localStorage.getItem('ng_class');
 
@@ -65,6 +68,15 @@ export class Network {
       if (this.onXpUpdate) this.onXpUpdate(data);
     });
 
+    this._socket.on('game:lobby_state', (data) => {
+      if (this.onLobbyState) this.onLobbyState(data);
+    });
+
+    this._socket.on('game:full', ({ reason }) => {
+      alert(`Cannot join: ${reason}`);
+      window.location.href = '/';
+    });
+
     this._socket.on('disconnect', () => {
       console.log('[Network] Disconnected');
       this._remotePlayers.clear();
@@ -81,6 +93,10 @@ export class Network {
       const rotY = this._cameraRef.rotation.y;
       this._socket.emit('player:move', { x, y, z, rotY });
     }, 50);
+  }
+
+  sendStartRound() {
+    this._socket.emit('game:start');
   }
 
   // targetId and distance are optional — only provided when a player is hit

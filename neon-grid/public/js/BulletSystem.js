@@ -40,7 +40,8 @@ export class BulletSystem {
 
   // ── Main shoot entry-point (replaces old spawnBullet) ────────────────
   // Returns: { type: 'wall'|'player'|'miss', playerId?, distance? }
-  shoot(origin, direction, camera) {
+  // barrelPos: optional THREE.Vector3 world position of the barrel tip for visual spawn
+  shoot(origin, direction, camera, barrelPos = null) {
     const originVec = new THREE.Vector3(origin.x, origin.y, origin.z);
     const dirVec    = new THREE.Vector3(direction.x, direction.y, direction.z).normalize();
 
@@ -50,8 +51,7 @@ export class BulletSystem {
     const allTargets    = [...wallTargets, ...playerTargets];
 
     if (allTargets.length === 0) {
-      // No targets yet (map still loading) — fire a cosmetic bullet
-      this._spawnTravelingBullet(originVec, dirVec, camera, 200);
+      this._spawnTravelingBullet(originVec, dirVec, camera, 200, barrelPos);
       return { type: 'miss' };
     }
 
@@ -59,36 +59,42 @@ export class BulletSystem {
     const hits      = raycaster.intersectObjects(allTargets, false);
 
     if (hits.length === 0) {
-      this._spawnTravelingBullet(originVec, dirVec, camera, 200);
+      this._spawnTravelingBullet(originVec, dirVec, camera, 200, barrelPos);
       return { type: 'miss' };
     }
 
     const first = hits[0];
 
     if (first.object.userData.isMapGeometry) {
-      this._spawnTravelingBullet(originVec, dirVec, camera, first.distance);
+      this._spawnTravelingBullet(originVec, dirVec, camera, first.distance, barrelPos);
       this._spawnWallImpact(first.point);
       return { type: 'wall', point: first.point };
     }
 
     if (first.object.userData.isPlayerHitbox) {
-      this._spawnTravelingBullet(originVec, dirVec, camera, first.distance);
+      this._spawnTravelingBullet(originVec, dirVec, camera, first.distance, barrelPos);
       return { type: 'player', playerId: first.object.userData.playerId, distance: first.distance };
     }
 
-    this._spawnTravelingBullet(originVec, dirVec, camera, 200);
+    this._spawnTravelingBullet(originVec, dirVec, camera, 200, barrelPos);
     return { type: 'miss' };
   }
 
   // ── Traveling bullet visual ───────────────────────────────────────────
-  _spawnTravelingBullet(originVec, dirVec, camera, maxDist) {
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-    const up    = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
-
-    const spawnPos = originVec.clone()
-      .addScaledVector(dirVec, 0.4)
-      .addScaledVector(right,  0.15)
-      .addScaledVector(up,    -0.1);
+  _spawnTravelingBullet(originVec, dirVec, camera, maxDist, barrelPos = null) {
+    let spawnPos;
+    if (barrelPos) {
+      // Use the actual barrel tip world position
+      spawnPos = barrelPos.clone();
+    } else {
+      // Fallback: estimate spawn from camera with weapon-side offset
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+      const up    = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+      spawnPos = originVec.clone()
+        .addScaledVector(dirVec, 0.4)
+        .addScaledVector(right,  0.15)
+        .addScaledVector(up,    -0.1);
+    }
 
     const cylGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.18, 6);
     const mesh   = new THREE.Mesh(cylGeo, new THREE.MeshBasicMaterial({ color: 0x88ffff }));

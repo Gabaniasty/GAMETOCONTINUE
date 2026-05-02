@@ -58,6 +58,9 @@ export class Controls {
     this.onScope   = null;   // () => void — wired up in main.js
     this.onUnscope = null;   // () => void
 
+    // Round system — controls are blocked during lobby/results
+    this.roundActive = false;
+
     // Legacy — kept so existing callers (bullets) still work
     this.collidableMeshes = [];
 
@@ -284,6 +287,7 @@ export class Controls {
   }
 
   _enter() {
+    if (!this.roundActive) return;  // Block pointer lock during lobby / results
     if (!this.isPlaying) this._setPlaying(true);
     this._tryPointerLock();
   }
