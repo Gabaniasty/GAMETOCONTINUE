@@ -117,9 +117,12 @@ export class Controls {
 
     const cos = Math.cos(this.yaw);
     const sin = Math.sin(this.yaw);
+    // Three.js Y-rotation matrix applied to local (fx, 0, fz):
+    // world_x = fx*cos + fz*sin
+    // world_z = -fx*sin + fz*cos
     return {
-      x: fx * cos - fz * sin,
-      z: fx * sin + fz * cos,
+      x:  fx * cos + fz * sin,
+      z: -fx * sin + fz * cos,
     };
   }
 

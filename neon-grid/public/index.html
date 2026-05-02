@@ -62,9 +62,7 @@
         window.location.href = '/game.html';
       } else {
         auth.showModal((username) => {
-          updateUI();
-          // Small delay so the user sees their name before navigating
-          setTimeout(() => { window.location.href = '/game.html'; }, 600);
+          window.location.href = '/game.html';
         });
       }
     });
