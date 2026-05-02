@@ -19,8 +19,8 @@ export class Controls {
   }
 
   _bindEvents() {
-    // Pointer lock
-    this.domElement.addEventListener('click', () => {
+    // Pointer lock — listen on document so clicks on the overlay also work
+    document.addEventListener('click', () => {
       if (!this.isLocked) this.domElement.requestPointerLock();
     });
 
