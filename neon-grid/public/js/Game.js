@@ -70,6 +70,16 @@ export class Game {
     });
   }
 
+  // Load with an already-constructed map loader (e.g. OverwatchMap)
+  loadWithLoader(loader, onReady) {
+    this._mapLoader = loader;
+    loader.load(null, (map) => {
+      this.collidableMeshes = map.getCollidableMeshes();
+      this.mapReady         = true;
+      if (onReady) onReady(map);
+    });
+  }
+
   // ── Weapon viewmodel scene ────────────────────────────────────────
   _buildWeaponScene() {
     this.weaponScene  = new THREE.Scene();

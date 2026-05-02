@@ -4,6 +4,10 @@ import { Hud }          from './Hud.js';
 import { BulletSystem } from './BulletSystem.js';
 import { SoundEngine }  from './SoundEngine.js';
 import { CLASSES }      from './Classes.js';
+import { OverwatchMap, OVERWATCH_AABBS } from './maps/OverwatchMap.js';
+
+// ── Map selection via URL param (?map=OVERWATCH | TERMINAL) ─────────────────
+const _selectedMap = (new URLSearchParams(location.search).get('map') || 'TERMINAL').toUpperCase();
 
 const localClass  = localStorage.getItem('ng_class') || 'SOLDIER';
 const classData   = CLASSES[localClass] || CLASSES.SOLDIER;
@@ -326,6 +330,18 @@ game._animate = function () {
   game._clampToWalls(camera.position);
   controls.applyToCamera();
 
+  // ── OVERWATCH nest teleport triggers ────────────────────────────
+  if (game._mapLoader && typeof game._mapLoader.checkNestTrigger === 'function') {
+    const tp = game._mapLoader.checkNestTrigger(camera, dt);
+    if (tp) {
+      camera.position.set(tp.targetX, tp.targetY, tp.targetZ);
+      controls._vel.y = 0;
+    }
+  }
+
+  // Per-frame map animation (turbine, sky, flickering lights, etc.)
+  if (game._mapLoader) game._mapLoader.update(dt);
+
   game.tickScope(dt);
   game.tickSpawnShield(camera);
   game.updateRemotePlayers(network.getRemotePlayers(), dt);
@@ -350,15 +366,52 @@ game._animate = function () {
   game.renderWeapon();
 };
 
-// ── Load map, then start game loop ─────────────────────────────────
-const loadingText = document.getElementById('loadingText');
-if (loadingText) loadingText.textContent = 'LOADING MAP...';
+// ── Map loading ─────────────────────────────────────────────────────
+// Deferred until the server confirms the active map via game:map.
+// This ensures every client — with or without a ?map= URL param — loads
+// the same map the server is using for collision / LOS validation.
 
-game.loadMap('/assets/maps/arena.glb', (map) => {
-  // Wire up collidable meshes for movement + bullet collision
-  game.controls.setCollidableMeshes(map.getCollidableMeshes());
-  bullets.setCollidableMeshes(map.getCollidableMeshes());
+let _mapLoaded = false;
 
-  // Start the game loop only after the map is fully loaded
-  game.start();
+function _loadMap(mapId) {
+  if (_mapLoaded) return;
+  _mapLoaded = true;
+
+  const loadingText = document.getElementById('loadingText');
+  if (loadingText) loadingText.textContent = 'LOADING MAP...';
+
+  if (mapId === 'OVERWATCH') {
+    const owMap = new OverwatchMap(game.scene);
+    game.loadWithLoader(owMap, (map) => {
+      const meshes = map.getCollidableMeshes();
+      game.controls.setCollidableMeshes(meshes);
+      game.controls.setMapAABBs(OVERWATCH_AABBS);
+      game.controls.setLadderZones([]);
+      bullets.setCollidableMeshes(meshes);
+      game.start();
+    });
+  } else {
+    game.loadMap('/assets/maps/arena.glb', (map) => {
+      game.controls.setCollidableMeshes(map.getCollidableMeshes());
+      bullets.setCollidableMeshes(map.getCollidableMeshes());
+      game.start();
+    });
+  }
+}
+
+// Listen for server-confirmed map (both initial response and late-join sync)
+network._socket.on('game:map', ({ mapId }) => {
+  _loadMap(mapId);
 });
+
+// On connect, send map preference to server; server replies with game:map
+network._socket.once('connect', () => {
+  network._socket.emit('game:map_request', { mapId: _selectedMap });
+});
+
+// Fallback: only if socket never connected (offline / server down) after 5 s.
+// When connected, we rely entirely on the server's game:map event so the
+// client never diverges from the server's authoritative map choice.
+setTimeout(() => {
+  if (!network._socket.connected) _loadMap(_selectedMap);
+}, 5000);

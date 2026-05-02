@@ -1,4 +1,5 @@
 import { buildTerminalMap, TERMINAL_AABBS, LADDER_ZONES, CATWALK_EYE_Y, GROUND_EYE_Y } from './maps/TerminalMap.js';
+export { OverwatchMap, OVERWATCH_AABBS, OVERWATCH_NEST_TRIGGERS } from './maps/OverwatchMap.js';
 
 // Re-export so Controls.js keeps its existing import path unchanged
 export { TERMINAL_AABBS as ARENA_AABBS };

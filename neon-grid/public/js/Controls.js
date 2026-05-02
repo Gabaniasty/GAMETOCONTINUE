@@ -87,6 +87,10 @@ export class Controls {
   // Kept for API compatibility — bullets still use mesh raycasts
   setCollidableMeshes(meshes) { this.collidableMeshes = meshes; }
 
+  // Swap AABB set used for player physics (call after loading a map)
+  setMapAABBs(aabbs)    { this._activeAABBs   = aabbs; }
+  setLadderZones(zones) { this._ladderZones    = zones; }
+
   // ── Fire rate gate ───────────────────────────────────────────────────────
   _canShoot() {
     const fireRate = CLASSES[this._playerClass]?.fireRate ?? 200;
@@ -195,7 +199,8 @@ export class Controls {
     const pz = camera.position.z;
     const py = camera.position.y;
 
-    for (const zone of LADDER_ZONES) {
+    const ladderZones = this._ladderZones !== undefined ? this._ladderZones : LADDER_ZONES;
+    for (const zone of ladderZones) {
       if (px < zone.minX || px > zone.maxX) continue;
       if (pz < zone.minZ || pz > zone.maxZ) continue;
 
@@ -233,7 +238,8 @@ export class Controls {
     }
 
     // AABB top surfaces
-    for (const box of ARENA_AABBS) {
+    const activeAABBs = this._activeAABBs || ARENA_AABBS;
+    for (const box of activeAABBs) {
       if (px + R <= box.minX || px - R >= box.maxX) continue;
       if (pz + R <= box.minZ || pz - R >= box.maxZ) continue;
       if (feetY > box.maxY + GROUND_MARGIN) continue;
@@ -272,7 +278,8 @@ export class Controls {
     const feetY = camera.position.y - this._currentEyeY;
     const headY = camera.position.y + 0.25;
 
-    for (const box of ARENA_AABBS) {
+    const activeAABBs2 = this._activeAABBs || ARENA_AABBS;
+    for (const box of activeAABBs2) {
       if (feetY >= box.maxY - 0.05) continue;
       if (headY <= box.minY)         continue;
 

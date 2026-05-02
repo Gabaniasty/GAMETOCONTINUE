@@ -22,7 +22,8 @@ const SPAWN_POINTS = [
   { x:  20, y: 1.65, z:  45 },
 ];
 
-const BOUNDS        = 49;
+const BOUNDS_TERMINAL  = 49;
+const BOUNDS_OVERWATCH = 50;
 const HIT_RADIUS    = 0.7;
 const MAX_PLAYERS   = 10;
 const ROUND_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -101,6 +102,89 @@ const ARENA_AABBS = [
   { minX: -2,     maxX:  2,     minY: 5.2, maxY: 5.8, minZ: -30, maxZ:  30   },
 ];
 
+// ── OVERWATCH map collision AABBs ──────────────────────────────────────────
+// Verbatim copy of OVERWATCH_AABBS from public/js/maps/OverwatchMap.js.
+// Keep these two lists identical so server LOS raycasting matches client physics.
+const OVERWATCH_AABBS = [
+  // ── Ground floor (full 100×100 slab) ──
+  { minX: -50, maxX: 50, minY: -0.5, maxY: 0, minZ: -50, maxZ: 50 },
+  // ── Outer boundary walls (keep players in map) ──
+  { minX: -50, maxX:  50, minY: 0, maxY: 3, minZ:  -50, maxZ: -48.5 },
+  { minX: -50, maxX:  50, minY: 0, maxY: 3, minZ:  48.5, maxZ:  50  },
+  { minX: -50, maxX: -48.5, minY: 0, maxY: 3, minZ: -50, maxZ:  50  },
+  { minX:  48.5, maxX: 50, minY: 0, maxY: 3, minZ: -50, maxZ:  50   },
+  // ── West building shell ──
+  { minX: -30, maxX: -29, minY: 0, maxY: 12, minZ: -8, maxZ: 8 },
+  { minX: -11, maxX: -10, minY: 0, maxY: 12, minZ: -8, maxZ: 8 },
+  { minX: -30, maxX: -23, minY: 0, maxY: 12, minZ: -8, maxZ: -7 },
+  { minX: -17, maxX: -10, minY: 0, maxY: 12, minZ: -8, maxZ: -7 },
+  { minX: -23, maxX: -17, minY: 3.5, maxY: 12, minZ: -8, maxZ: -7 },
+  { minX: -30, maxX: -23, minY: 0, maxY: 12, minZ: 7, maxZ: 8 },
+  { minX: -17, maxX: -10, minY: 0, maxY: 12, minZ: 7, maxZ: 8 },
+  { minX: -23, maxX: -17, minY: 3.5, maxY: 12, minZ: 7, maxZ: 8 },
+  // ── West building interior ramp ──
+  { minX: -22, maxX: -18, minY: 0, maxY: 4,  minZ:  2, maxZ: 7  },
+  { minX: -22, maxX: -18, minY: 4, maxY: 8,  minZ: -4, maxZ: 2  },
+  { minX: -22, maxX: -18, minY: 8, maxY: 12, minZ: -7, maxZ: -4 },
+  // ── West rooftop slab ──
+  { minX: -30, maxX: -10, minY: 12, maxY: 12.5, minZ: -8, maxZ: 8 },
+  // ── West rooftop low parapet walls ──
+  { minX: -30, maxX: -10,    minY: 12.5, maxY: 13.3, minZ: -8.5, maxZ: -8.0  },
+  { minX: -30, maxX: -10,    minY: 12.5, maxY: 13.3, minZ:  8.0, maxZ:  8.5  },
+  { minX: -30.5, maxX: -30,  minY: 12.5, maxY: 13.3, minZ: -8.0, maxZ:  8.0  },
+  { minX: -10.5, maxX: -10,  minY: 12.5, maxY: 13.3, minZ: -8.0, maxZ: -2.5  },
+  { minX: -10.5, maxX: -10,  minY: 12.5, maxY: 13.3, minZ:  2.5, maxZ:  8.0  },
+  // ── East building shell (mirrored) ──
+  { minX:  29, maxX:  30, minY: 0, maxY: 12, minZ: -8, maxZ: 8 },
+  { minX:  10, maxX:  11, minY: 0, maxY: 12, minZ: -8, maxZ: 8 },
+  { minX:  10, maxX:  17, minY: 0, maxY: 12, minZ: -8, maxZ: -7 },
+  { minX:  23, maxX:  30, minY: 0, maxY: 12, minZ: -8, maxZ: -7 },
+  { minX:  17, maxX:  23, minY: 3.5, maxY: 12, minZ: -8, maxZ: -7 },
+  { minX:  10, maxX:  17, minY: 0, maxY: 12, minZ: 7, maxZ: 8 },
+  { minX:  23, maxX:  30, minY: 0, maxY: 12, minZ: 7, maxZ: 8 },
+  { minX:  17, maxX:  23, minY: 3.5, maxY: 12, minZ: 7, maxZ: 8 },
+  // ── East building interior ramp ──
+  { minX:  18, maxX:  22, minY: 0, maxY: 4,  minZ:  2, maxZ: 7  },
+  { minX:  18, maxX:  22, minY: 4, maxY: 8,  minZ: -4, maxZ: 2  },
+  { minX:  18, maxX:  22, minY: 8, maxY: 12, minZ: -7, maxZ: -4 },
+  // ── East rooftop slab ──
+  { minX:  10, maxX:  30, minY: 12, maxY: 12.5, minZ: -8, maxZ: 8 },
+  // ── East rooftop low parapet walls ──
+  { minX:  10, maxX:  30,   minY: 12.5, maxY: 13.3, minZ: -8.5, maxZ: -8.0  },
+  { minX:  10, maxX:  30,   minY: 12.5, maxY: 13.3, minZ:  8.0, maxZ:  8.5  },
+  { minX:  30, maxX:  30.5, minY: 12.5, maxY: 13.3, minZ: -8.0, maxZ:  8.0  },
+  { minX:  10, maxX:  10.5, minY: 12.5, maxY: 13.3, minZ: -8.0, maxZ: -2.5  },
+  { minX:  10, maxX:  10.5, minY: 12.5, maxY: 13.3, minZ:  2.5, maxZ:  8.0  },
+  // ── North catwalk (west rooftop, extends north) ──
+  { minX: -23, maxX: -17, minY: 12, maxY: 12.4, minZ: -28, maxZ: -8 },
+  // ── South catwalk (east rooftop, extends south) ──
+  { minX:  17, maxX:  23, minY: 12, maxY: 12.4, minZ:  8, maxZ:  28 },
+  // ── Center bridge ──
+  { minX: -20, maxX: 20, minY: 12, maxY: 12.5, minZ: -3, maxZ: 3 },
+  // ── NW sniper nest platform ──
+  { minX: -45, maxX: -35, minY: 20, maxY: 20.5, minZ: -40, maxZ: -30 },
+  { minX: -45, maxX: -35,   minY: 20.5, maxY: 21.7, minZ: -40.5, maxZ: -40 },
+  { minX: -45.5, maxX: -45, minY: 20.5, maxY: 21.7, minZ: -40,   maxZ: -30 },
+  { minX: -45, maxX: -35,   minY: 20.5, maxY: 21.7, minZ: -30,   maxZ: -29.5 },
+  // ── SE sniper nest platform ──
+  { minX:  35, maxX:  45, minY: 20, maxY: 20.5, minZ:  30, maxZ:  40 },
+  { minX:  35, maxX:  45,   minY: 20.5, maxY: 21.7, minZ:  40,   maxZ:  40.5 },
+  { minX:  45, maxX:  45.5, minY: 20.5, maxY: 21.7, minZ:  30,   maxZ:  40   },
+  { minX:  35, maxX:  45,   minY: 20.5, maxY: 21.7, minZ:  29.5, maxZ:  30   },
+  // ── Center antenna tower ──
+  { minX: -1.5, maxX: 1.5, minY:  0, maxY:  3, minZ: -1.5, maxZ: 1.5 },
+  { minX: -0.5, maxX: 0.5, minY:  3, maxY: 21, minZ: -0.5, maxZ: 0.5 },
+  // ── Ground concrete barriers (8) ──
+  { minX: -4,    maxX:  4,    minY: 0, maxY: 1.4, minZ: -16.4, maxZ: -15.6 },
+  { minX: -4,    maxX:  4,    minY: 0, maxY: 1.4, minZ: -10.4, maxZ:  -9.6 },
+  { minX: -4,    maxX:  4,    minY: 0, maxY: 1.4, minZ:   9.6, maxZ:  10.4 },
+  { minX: -4,    maxX:  4,    minY: 0, maxY: 1.4, minZ:  15.6, maxZ:  16.4 },
+  { minX: -16.4, maxX: -15.6, minY: 0, maxY: 1.4, minZ:  -4,   maxZ:   4   },
+  { minX: -10.4, maxX:  -9.6, minY: 0, maxY: 1.4, minZ:  -4,   maxZ:   4   },
+  { minX:   9.6, maxX:  10.4, minY: 0, maxY: 1.4, minZ:  -4,   maxZ:   4   },
+  { minX:  15.6, maxX:  16.4, minY: 0, maxY: 1.4, minZ:  -4,   maxZ:   4   },
+];
+
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
 function rayAABBDist(ro, rd, box) {
@@ -122,7 +206,11 @@ class GameServer {
     this.players      = new Map();
     this._spawnIndex  = 0;
     this._tickInterval = null;
+
+    // ── Map selection ─────────────────────────────────────────────
+    this.currentMap   = 'TERMINAL';   // 'TERMINAL' | 'OVERWATCH'
     this.mapAABBs     = ARENA_AABBS;
+    this._bounds      = BOUNDS_TERMINAL;
 
     // ── Round system ─────────────────────────────────────────────
     this.gameState      = 'lobby';   // 'lobby' | 'playing' | 'results'
@@ -137,6 +225,19 @@ class GameServer {
 
     // ── Matchmaker ───────────────────────────────────────────────
     this.matchmaker = new Matchmaker(io);
+  }
+
+  _applyMap(mapId) {
+    if (mapId === 'OVERWATCH') {
+      this.currentMap = 'OVERWATCH';
+      this.mapAABBs   = OVERWATCH_AABBS;
+      this._bounds    = BOUNDS_OVERWATCH;
+    } else {
+      this.currentMap = 'TERMINAL';
+      this.mapAABBs   = ARENA_AABBS;
+      this._bounds    = BOUNDS_TERMINAL;
+    }
+    this.io.emit('game:map', { mapId: this.currentMap });
   }
 
   isLineClearOfWalls(from, to) {
@@ -208,6 +309,9 @@ class GameServer {
 
         this.players.set(socket.id, player);
 
+        // Inform joining player of the active map so their client loads correctly
+        socket.emit('game:map', { mapId: this.currentMap });
+
         // Assign host to first player
         if (!this.hostId) this.hostId = socket.id;
 
@@ -230,12 +334,23 @@ class GameServer {
       socket.on('player:move', ({ x, y, z, rotY, vx, vy, vz, isADS }) => {
         const p = this.players.get(socket.id);
         if (!p || p.dead) return;
-        p.x        = clamp(x, -BOUNDS, BOUNDS);
+        const B = this._bounds;
+        p.x        = clamp(x, -B, B);
         p.y        = y;
-        p.z        = clamp(z, -BOUNDS, BOUNDS);
+        p.z        = clamp(z, -B, B);
         p.rotY     = rotY;
         p.velocity = { x: vx || 0, y: vy || 0, z: vz || 0 };
         p.isADS    = !!isADS;
+      });
+
+      // ── Map selection (first requesting player sets the map) ──────
+      socket.on('game:map_request', ({ mapId }) => {
+        if (this.gameState !== 'lobby') return;
+        if (this.players.size <= 1) {
+          this._applyMap(mapId);
+        }
+        // Always inform the requesting client of the current map
+        socket.emit('game:map', { mapId: this.currentMap });
       });
 
       // ── Shoot handler ────────────────────────────────────────────
@@ -397,7 +512,7 @@ class GameServer {
 
     // Create match record and register authenticated players
     try {
-      this._currentMatchId = db.createMatch('ARENA', 'DEATHMATCH');
+      this._currentMatchId = db.createMatch(this.currentMap, 'DEATHMATCH');
       for (const p of this.players.values()) {
         if (p.userId) db.addMatchPlayer(this._currentMatchId, p.userId);
       }
