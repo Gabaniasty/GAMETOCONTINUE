@@ -1,0 +1,286 @@
+Add the XP progression system and global leaderboard to NEON GRID.
+
+Leaderboard API — update src/auth/AuthRouter.js:
+
+GET /api/leaderboard:
+
+Query top 20 players by XP from stats JOIN users table
+Return array of: { rank, username, xp, level, kills, deaths, kd_ratio }
+kd_ratio = kills / max(deaths, 1), rounded to 2 decimal places
+No auth required (public)
+
+GET /api/stats/me (auth required):
+
+Return current user's full stats + rank position in global leaderboard
+
+Leaderboard page — create public/leaderboard.html:
+
+Full styled page with:
+
+Header: "NEON GRID — TOP OPERATIVES" in neon cyan
+Back button to index.html
+Table with columns: RANK | OPERATIVE | LEVEL | XP | K/D | KILLS
+Rank 1-3 get special styling: gold/silver/bronze neon glow on username
+Auto-refreshes every 30 seconds
+Fetch from /api/leaderboard on load
+
+Cyberpunk table styling:
+
+Table background: #0d0d1a
+Header row: #00f5ff text, border-bottom neon cyan
+Alternating row colors: #0a0a12 and #0d0d1a
+Hover: row background #1a0033 with neon pink border-left
+Current user's row highlighted in neon purple
+
+In-game XP + Level HUD — update Hud.js:
+
+Add to the HUD:
+
+XP bar: thin bar at very bottom of screen, cyan fill, shows "LVL 4 — 420 XP" next to it
+XP gain animation: when kill happens, "+100 XP" floats upward from center and fades
+Level-up: if XP crosses a new level threshold, show full-screen "LEVEL UP! → LVL X" flash in neon
+
+Player stats in lobby — update index.html:
+
+When logged in, show a small stats card: Level, XP, Kills, K/D Ratio
+"LEADERBOARD" button → leaderboard.html
+
+Socket updates:
+
+Server emits 'player:xp_update' to a player whenever their XP/level changes: { xp, level }
+Client Network.js listens and updates HUD XP bar
+
+Test: earn kills in-game, watch XP bar fill, check leaderboard.html updates.
+
+---
+
+### ═══ PHASE 7: CLASSES & CLASS SELECTION ═══
+
+**Paste this after Phase 6 is complete:**
+
+Implement the 3 player classes with unique stats and a class selection screen.
+
+Class definitions — create public/js/Classes.js (shared data, also require in server):
+
+const CLASSES = {
+
+  SOLDIER: {
+
+    name: "SOLDIER",
+
+    hp: 100,
+
+    speed: 8,
+
+    weapon: "Pulse Rifle",
+
+    damage: 25,
+
+    fireRate: 200,      // ms between shots
+
+    bulletColor: 0x00f5ff,
+
+    description: "Balanced fighter. Reliable in any situation.",
+
+    color: "#00f5ff"
+
+  },
+
+  GHOST: {
+
+    name: "GHOST",
+
+    hp: 75,
+
+    speed: 12,
+
+    weapon: "Volt SMG",
+
+    damage: 15,
+
+    fireRate: 80,
+
+    bulletColor: 0xff2d78,
+
+    description: "Fragile but lethal. Built to flank and overwhelm.",
+
+    color: "#ff2d78"
+
+  },
+
+  WRAITH: {
+
+    name: "WRAITH",
+
+    hp: 125,
+
+    speed: 5,
+
+    weapon: "Ion Sniper",
+
+    damage: 90,
+
+    fireRate: 1500,
+
+    bulletColor: 0x7b2fff,
+
+    description: "Patient. One shot, one kill. Punishes mistakes.",
+
+    color: "#7b2fff"
+
+  }
+
+};
+
+Class selection screen — create public/class-select.html:
+
+Full-screen class picker shown before entering the game:
+
+Title: "CHOOSE YOUR CLASS — OPERATIVE"
+3 cards side by side, one per class:
+Class name (large, class color)
+Weapon name
+Description
+Stat bars: HP, SPEED, DAMAGE, FIRE RATE (4 bars, filled proportionally, class color)
+"SELECT" button
+Hover: card lifts with box-shadow glow in class color
+Selected card: glowing border, pulsing animation
+"CONFIRM" button at bottom: saves chosen class to localStorage, redirects to game.html
+Back button to index.html
+
+Apply class stats in game:
+
+Update Controls.js:
+
+Read playerClass from localStorage (default 'SOLDIER')
+Use CLASSES[playerClass].speed as movement speed
+Use CLASSES[playerClass].fireRate as minimum ms between shots (track lastShotTime)
+
+Update GameServer.js:
+
+On player join, read class from player data
+Use CLASSES[class].hp as starting HP
+Use CLASSES[class].damage for hit calculation (instead of hardcoded values)
+
+Update Game.js player mesh colors:
+
+Use CLASSES[class].color to set mesh emissive color for remote players
+
+Update index.html:
+
+"PLAY NOW" → goes to class-select.html (not directly game.html)
+
+Test: select each class, verify speed/HP differences feel distinct in-game.
+
+---
+
+### ═══ PHASE 8: NEON CYBERPUNK UI POLISH ═══
+
+**Paste this after Phase 7 is complete:**
+
+Polish the full UI with a cohesive neon cyberpunk aesthetic across all screens.
+
+Global CSS overhaul — update public/css/style.css:
+
+Add these styles (do not remove existing, only add/enhance):
+
+Scanline overlay effect:
+
+body::after pseudoelement with repeating-linear-gradient of semi-transparent black lines, pointer-events: none, fixed position, z-index 9999, opacity 0.03
+
+Neon button variants:
+
+.btn-cyan: cyan border + glow, hover: background fill cyan, text dark
+.btn-pink: pink border + glow, hover: fill pink
+.btn-purple: purple border + glow
+All buttons: uppercase, letter-spacing 2px, font Orbitron, transition 0.2s
+
+Neon input fields:
+
+Background: #0d0d1a
+Border: 1px solid #00f5ff40
+Focus: border #00f5ff, box-shadow 0 0 10px #00f5ff40
+Color: #e0e0ff, caret-color: #00f5ff
+Placeholder: #404060
+
+Animated neon title:
+
+.title-glow: keyframe animation that pulses text-shadow between dim and bright cyan
+
+Glass-morphism card:
+
+.neon-card: background rgba(13,13,34,0.85), border 1px solid #00f5ff30, backdrop-filter blur(10px), border-radius 4px
+
+HUD redesign — update Hud.js:
+
+Health bar: redesign as segmented bar (10 segments), each segment a box, filled = class color, empty = dark
+Ammo display: bottom-right, large number showing shots remaining, "∞" if no reload mechanic yet
+Player info: top-left, show username + class icon (colored square) + level badge
+Kill feed: glassmorphism background, entries slide in from right
+Minimap (simple): bottom-right, 80x80px canvas, shows player dots as colored pixels (one color per class), your dot is white
+
+Loading/transition screen:
+
+When navigating between pages: brief full-screen flash of neon grid lines, then fade out (CSS animation, triggered via JS before redirect)
+
+Sound feedback (Web Audio API, no external files needed):
+
+Shoot sound: short oscillator burst (square wave, 200hz → 100hz, 80ms)
+Hit sound: short noise burst (50ms)
+Kill sound: ascending arpeggio (3 quick beeps: 440hz, 550hz, 660hz)
+All generated procedurally with Web Audio API — no audio files needed
+
+Test: play the full game flow from index.html → class select → game → leaderboard, verify cohesive aesthetic throughout.
+
+---
+
+### ═══ PHASE 9: PERFORMANCE & GAME FEEL ═══
+
+**Paste this after Phase 8 is complete:**
+
+Optimize NEON GRID for smooth performance and improve game feel.
+
+Client-side prediction — update Controls.js and Network.js:
+
+Add client-side prediction so local movement feels instant:
+
+Move the local camera immediately on input (don't wait for server confirmation)
+Send position to server every 50ms
+When server sends back authoritative position, only snap-correct if error > 1 unit (to avoid rubber-banding for small discrepancies)
+Add linear interpolation for remote players: instead of snapping to new position, lerp at speed 10/s
+
+Object pooling — update Game.js:
+
+Pre-create 20 bullet-trail line objects and 10 hit-particle systems at startup
+Reuse them instead of creating/destroying every shot
+This prevents garbage collection hitches
+
+Server optimization — update GameServer.js:
+
+Only send delta updates (what changed) instead of full state each tick
+Full state sync only on join or when requested
+Dead-reckoning: skip sending position updates for players who haven't moved
+
+Frame rate smoothing:
+
+Cap physics at 60fps using delta-time for all movement calculations
+Add FPS counter to HUD (top-right, small, shows current FPS)
+
+Map enhancements — update Game.js:
+
+Add InstancedMesh for the 8 cover boxes (single draw call)
+Add animated neon edge lines on walls (LineSegments that pulse emissive intensity using Math.sin(time))
+Add particle system: 50 floating dust particles drifting slowly upward (tiny points, cyan, very low opacity)
+
+Respawn improvements:
+
+Spawn protection: 3 seconds after respawn, player cannot take damage (show blinking shield effect)
+Smart spawning: pick the spawn point furthest from all enemies
+
+Quality of life:
+
+Tab key: show scoreboard overlay (all players, kills/deaths/xp) while held, hide on release
+M key: toggle minimap size (small ↔ large)
+Settings button on pause menu: mouse sensitivity slider (0.1 – 2.0), save to localStorage
+
+Test: play for 5 minutes, verify FPS stays above 45, no memory leaks, movement feels responsive.
