@@ -26,7 +26,7 @@ function makeToken(userId, username) {
 }
 
 // ── POST /api/auth/register ────────────────────────────────────
-router.post('/auth/register', async (req, res) => {
+router.post('/register', async (req, res) => {
   const { username, password } = req.body;
 
   if (!USERNAME_RE.test(username)) {
@@ -47,7 +47,7 @@ router.post('/auth/register', async (req, res) => {
 });
 
 // ── POST /api/auth/login ───────────────────────────────────────
-router.post('/auth/login', async (req, res) => {
+router.post('/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password required' });
@@ -64,7 +64,7 @@ router.post('/auth/login', async (req, res) => {
 });
 
 // ── GET /api/auth/me ───────────────────────────────────────────
-router.get('/auth/me', verifyToken, (req, res) => {
+router.get('/me', verifyToken, (req, res) => {
   const user  = db.getUserById(req.user.userId);
   if (!user)  return res.status(404).json({ error: 'User not found' });
   const stats = db.getStats(req.user.userId);
