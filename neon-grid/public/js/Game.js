@@ -99,6 +99,11 @@ export class Game {
 
     this._recoilElapsed    = -1;
     this._weaponFlashTimer = 0;
+
+    // ── Scope state ───────────────────────────────────────────────
+    this._isScoped        = false;
+    this._scopeFovTarget  = 75;
+    this._scopeFovCurrent = 75;
   }
 
   _makeMuzzleFlashTexture() {
@@ -114,11 +119,54 @@ export class Game {
     return new THREE.CanvasTexture(c);
   }
 
+  // ── Scope in/out ─────────────────────────────────────────────────
+  setScoped(scoped) {
+    this._isScoped       = scoped;
+    this._scopeFovTarget = scoped ? 75 / 6 : 75;   // 6× magnification → ~12.5° FOV
+
+    // Hide weapon viewmodel when looking through scope
+    if (this._gunGroup) this._gunGroup.visible = !scoped;
+
+    // Show / hide the scope overlay DOM element
+    const scopeEl = document.getElementById('scope-overlay');
+    if (scopeEl) scopeEl.style.display = scoped ? 'block' : 'none';
+
+    // Swap HUD crosshair: scope has its own reticle
+    const ch = document.getElementById('crosshair');
+    if (ch) ch.style.display = scoped ? 'none' : (this.controls.isPlaying ? 'block' : 'none');
+  }
+
+  // ── FOV lerp — call every frame ───────────────────────────────────
+  tickScope(dt) {
+    const diff = this._scopeFovTarget - this._scopeFovCurrent;
+    if (Math.abs(diff) < 0.05) {
+      this._scopeFovCurrent = this._scopeFovTarget;
+    } else {
+      this._scopeFovCurrent += diff * Math.min(1, 14 * dt);
+    }
+    if (this.camera.fov !== this._scopeFovCurrent) {
+      this.camera.fov = this._scopeFovCurrent;
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
   triggerRecoil() {
     this._recoilElapsed    = 0;
     this._weaponFlashTimer = 0.06;
-    this._muzzleFlashSprite.visible = true;
-    this._muzzleLight.intensity     = 8;
+
+    if (this._isScoped) {
+      // Scoped: animate reticle kick instead of weapon model
+      const reticle = document.getElementById('scope-reticle');
+      if (reticle) {
+        reticle.classList.remove('scope-kick');
+        void reticle.offsetWidth;   // force reflow to restart animation
+        reticle.classList.add('scope-kick');
+      }
+    } else {
+      // Unscoped: show muzzle flash on weapon viewmodel
+      this._muzzleFlashSprite.visible = true;
+      this._muzzleLight.intensity     = 8;
+    }
   }
 
   tickWeapon(dt) {

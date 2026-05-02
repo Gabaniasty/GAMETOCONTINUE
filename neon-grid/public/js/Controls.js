@@ -53,6 +53,11 @@ export class Controls {
     this._jumpHeld    = false;
     this._onGround    = true;
 
+    // Scope state (WRAITH only)
+    this.isScoped  = false;
+    this.onScope   = null;   // () => void — wired up in main.js
+    this.onUnscope = null;   // () => void
+
     // Legacy — kept so existing callers (bullets) still work
     this.collidableMeshes = [];
 
@@ -284,17 +289,43 @@ export class Controls {
   }
 
   _bindEvents() {
+    // Prevent right-click context menu in game
+    document.addEventListener('contextmenu', (e) => e.preventDefault());
+
     document.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      if (!this.isPlaying) { this._enter(); return; }
-      if (this.isDead) return;
-      if (!this._canShoot()) return;
-      if (this.onShoot) this.onShoot();
+      // Left click — shoot or enter game
+      if (e.button === 0) {
+        if (!this.isPlaying) { this._enter(); return; }
+        if (this.isDead) return;
+        if (!this._canShoot()) return;
+        if (this.onShoot) this.onShoot();
+        return;
+      }
+      // Right click — scope in (WRAITH only)
+      if (e.button === 2) {
+        if (!this.isPlaying || this.isDead) return;
+        if (this._playerClass !== 'WRAITH') return;
+        if (this.isScoped) return;
+        this.isScoped = true;
+        if (this.onScope) this.onScope();
+      }
+    });
+
+    document.addEventListener('mouseup', (e) => {
+      if (e.button !== 2) return;
+      if (!this.isScoped) return;
+      this.isScoped = false;
+      if (this.onUnscope) this.onUnscope();
     });
 
     document.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
       if (e.code === 'Escape') {
+        // Unscope before exiting
+        if (this.isScoped) {
+          this.isScoped = false;
+          if (this.onUnscope) this.onUnscope();
+        }
         this._setPlaying(false);
         this._lastMouseX = null;
         this._lastMouseY = null;
@@ -321,8 +352,10 @@ export class Controls {
         dx = e.clientX - this._lastMouseX; dy = e.clientY - this._lastMouseY;
         this._lastMouseX = e.clientX; this._lastMouseY = e.clientY;
       }
-      this.yaw   -= dx * this.sensitivity;
-      this.pitch -= dy * this.sensitivity;
+      // Divide sensitivity by zoom factor when scoped (6× zoom = 6× slower aim)
+      const sens = this.sensitivity * (this.isScoped ? 1 / 6 : 1);
+      this.yaw   -= dx * sens;
+      this.pitch -= dy * sens;
       const MAX_PITCH = (80 * Math.PI) / 180;
       this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch));
     });

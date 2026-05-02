@@ -108,6 +108,20 @@ document.addEventListener('keyup', (e) => {
   if (e.code === 'Tab') hud.hideScoreboard();
 });
 
+// ── Scope wiring (WRAITH only) ─────────────────────────────────────
+if (localClass === 'WRAITH') {
+  game.controls.onScope   = () => game.setScoped(true);
+  game.controls.onUnscope = () => game.setScoped(false);
+}
+
+// Also unscope on death
+const _origOnKilled = network.onKilled;
+network.onKilled = (...args) => {
+  if (game._isScoped) game.setScoped(false);
+  if (game.controls.isScoped) game.controls.isScoped = false;
+  if (_origOnKilled) _origOnKilled(...args);
+};
+
 // ── Patched game loop ──────────────────────────────────────────────
 game._animate = function () {
   requestAnimationFrame(() => game._animate());
@@ -122,6 +136,7 @@ game._animate = function () {
   game._clampToWalls(camera.position);
   controls.applyToCamera();
 
+  game.tickScope(dt);
   game.tickSpawnShield(camera);
   game.updateRemotePlayers(network.getRemotePlayers(), dt);
   game._tickVfx(dt);

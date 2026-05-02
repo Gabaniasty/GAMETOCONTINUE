@@ -105,6 +105,86 @@
       50%       { opacity: 0.35; }
     }
 
+    /* ── Scope overlay (WRAITH) ── */
+    #scope-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      pointer-events: none;
+    }
+
+    #scope-bg {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(
+        circle at 50% 50%,
+        transparent 184px,
+        rgba(2, 2, 10, 0.55) 189px,
+        rgba(2, 2, 10, 0.97) 200px
+      );
+    }
+
+    #scope-ring {
+      position: absolute;
+      width: 382px;
+      height: 382px;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      border: 2px solid rgba(123, 47, 255, 0.75);
+      box-shadow: 0 0 22px rgba(123, 47, 255, 0.4),
+                  inset 0 0 22px rgba(123, 47, 255, 0.07);
+    }
+
+    #scope-reticle {
+      position: absolute;
+      width: 380px;
+      height: 380px;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    #scope-reticle.scope-kick {
+      animation: scope-kick 0.24s ease-out forwards;
+    }
+
+    @keyframes scope-kick {
+      0%   { transform: translate(-50%, -50%) translateY(0)   rotate(0deg);    }
+      18%  { transform: translate(-50%, -50%) translateY(-7px) rotate(2.2deg); }
+      100% { transform: translate(-50%, -50%) translateY(0)   rotate(0deg);    }
+    }
+
+    #scope-lens-glare {
+      position: absolute;
+      width: 380px;
+      height: 380px;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      background: radial-gradient(
+        ellipse 55% 35% at 32% 22%,
+        rgba(255,255,255,0.045) 0%,
+        transparent 60%
+      );
+    }
+
+    #scope-info {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, 208px);
+      font-family: 'Orbitron', monospace;
+      font-size: 0.52rem;
+      letter-spacing: 0.3em;
+      color: rgba(123, 47, 255, 0.65);
+      white-space: nowrap;
+      text-shadow: 0 0 8px rgba(123, 47, 255, 0.5);
+    }
+
     /* ── Crosshair ── */
     #crosshair {
       display: none;
@@ -169,6 +249,33 @@
 
   <!-- Crosshair -->
   <div id="crosshair"><div id="crosshair-dot"></div></div>
+
+  <!-- Scope overlay — visible only when WRAITH aims in -->
+  <div id="scope-overlay">
+    <div id="scope-bg"></div>
+    <svg id="scope-reticle" viewBox="0 0 380 380" xmlns="http://www.w3.org/2000/svg">
+      <line x1="0"   y1="190" x2="162" y2="190" stroke="#9b5fff" stroke-width="1.2" opacity="0.9"/>
+      <line x1="218" y1="190" x2="380" y2="190" stroke="#9b5fff" stroke-width="1.2" opacity="0.9"/>
+      <line x1="190" y1="0"   x2="190" y2="162" stroke="#9b5fff" stroke-width="1.2" opacity="0.9"/>
+      <line x1="190" y1="218" x2="190" y2="380" stroke="#9b5fff" stroke-width="1.2" opacity="0.9"/>
+      <circle cx="190" cy="190" r="2.8" fill="#d0a0ff"/>
+      <circle cx="133" cy="190" r="3.2" fill="#7b2fff" opacity="0.85"/>
+      <circle cx="247" cy="190" r="3.2" fill="#7b2fff" opacity="0.85"/>
+      <circle cx="97"  cy="190" r="2.2" fill="#7b2fff" opacity="0.55"/>
+      <circle cx="283" cy="190" r="2.2" fill="#7b2fff" opacity="0.55"/>
+      <circle cx="190" cy="133" r="3.2" fill="#7b2fff" opacity="0.85"/>
+      <circle cx="190" cy="247" r="3.2" fill="#7b2fff" opacity="0.85"/>
+      <circle cx="190" cy="97"  r="2.2" fill="#7b2fff" opacity="0.55"/>
+      <circle cx="190" cy="283" r="2.2" fill="#7b2fff" opacity="0.55"/>
+      <line x1="183" y1="247" x2="197" y2="247" stroke="#7b2fff" stroke-width="1" opacity="0.6"/>
+      <line x1="185" y1="283" x2="195" y2="283" stroke="#7b2fff" stroke-width="0.9" opacity="0.4"/>
+      <line x1="247"  y1="183" x2="247"  y2="197" stroke="#7b2fff" stroke-width="1"   opacity="0.6"/>
+      <circle cx="190" cy="190" r="185" fill="none" stroke="#7b2fff" stroke-width="1.2" opacity="0.5"/>
+    </svg>
+    <div id="scope-ring"></div>
+    <div id="scope-lens-glare"></div>
+    <div id="scope-info">6× · ION SNIPER</div>
+  </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
