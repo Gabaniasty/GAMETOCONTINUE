@@ -5,6 +5,7 @@ export class Network {
     this._localId = null;
     this._moveInterval = null;
     this._cameraRef = null;
+    this._controlsRef = null;
     this._playerClass = 'SOLDIER';
 
     // Combat callbacks — set by main.js
@@ -84,14 +85,23 @@ export class Network {
     });
   }
 
-  startSendingPosition(camera) {
-    this._cameraRef = camera;
+  startSendingPosition(camera, controls) {
+    this._cameraRef   = camera;
+    this._controlsRef = controls || null;
     if (this._moveInterval) clearInterval(this._moveInterval);
     this._moveInterval = setInterval(() => {
       if (!this._socket.connected || !this._cameraRef) return;
       const { x, y, z } = this._cameraRef.position;
       const rotY = this._cameraRef.rotation.y;
-      this._socket.emit('player:move', { x, y, z, rotY });
+
+      let vx = 0, vy = 0, vz = 0, isADS = false;
+      if (this._controlsRef) {
+        const v = this._controlsRef._vel;
+        vx = v.x; vy = v.y; vz = v.z;
+        isADS = !!this._controlsRef.isScoped;
+      }
+
+      this._socket.emit('player:move', { x, y, z, rotY, vx, vy, vz, isADS });
     }, 50);
   }
 

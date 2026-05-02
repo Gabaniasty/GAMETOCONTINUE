@@ -197,6 +197,9 @@ class GameServer {
           deaths: 0,
           dead:   false,
           spawnProtection: true,
+          isShooting: false,
+          isADS:      false,
+          velocity:   { x: 0, y: 0, z: 0 },
         };
 
         this.players.set(socket.id, player);
@@ -220,13 +223,15 @@ class GameServer {
         }
       });
 
-      socket.on('player:move', ({ x, y, z, rotY }) => {
+      socket.on('player:move', ({ x, y, z, rotY, vx, vy, vz, isADS }) => {
         const p = this.players.get(socket.id);
         if (!p || p.dead) return;
-        p.x    = clamp(x, -BOUNDS, BOUNDS);
-        p.y    = y;
-        p.z    = clamp(z, -BOUNDS, BOUNDS);
-        p.rotY = rotY;
+        p.x        = clamp(x, -BOUNDS, BOUNDS);
+        p.y        = y;
+        p.z        = clamp(z, -BOUNDS, BOUNDS);
+        p.rotY     = rotY;
+        p.velocity = { x: vx || 0, y: vy || 0, z: vz || 0 };
+        p.isADS    = !!isADS;
       });
 
       // ── Shoot handler ────────────────────────────────────────────
@@ -264,6 +269,9 @@ class GameServer {
                     (toTarget.y / len) * direction.y +
                     (toTarget.z / len) * direction.z;
         if (dot < 0.85) return;
+
+        shooter.isShooting = true;
+        setTimeout(() => { if (this.players.has(socket.id)) this.players.get(socket.id).isShooting = false; }, 200);
 
         const damage = (CLASSES[weaponClass || shooter.class] || CLASSES.SOLDIER).damage;
         target.hp    = Math.max(0, target.hp - damage);

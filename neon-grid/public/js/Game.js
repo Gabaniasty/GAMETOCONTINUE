@@ -1,7 +1,7 @@
-import { Controls }           from './Controls.js';
-import { buildCharacterModel } from './CharacterModel.js';
+import { Controls }            from './Controls.js';
 import { buildWeapon }         from './WeaponBuilder.js';
 import { MapLoader }           from './MapLoader.js';
+import { CharacterController } from './CharacterController.js';
 
 const CLASS_COLORS = {
   SOLDIER: 0x00f5ff,
@@ -38,9 +38,10 @@ export class Game {
     this._localClass      = localClass;
     this._localClassColor = CLASS_COLORS[localClass] || 0x00f5ff;
 
-    // ── Remote players ────────────────────────────────────────────
-    this._remoteMeshes = new Map();
-    this._dyingModels  = [];
+    // ── Remote players (GLB controller map + legacy dying list) ───
+    this._remoteControllers = new Map();   // socketId → CharacterController
+    this._loadingIds        = new Set();   // socketIds currently loading GLB
+    this._dyingControllers  = [];          // [{ctrl, timer}] for fade/disposal
 
     // ── Spawn protection shield ────────────────────────────────────
     this._spawnShield = null;
@@ -196,12 +197,120 @@ export class Game {
     this.renderer.render(this.weaponScene, this.weaponCamera);
   }
 
-  // ── Remote players ────────────────────────────────────────────────
-  _createRemoteMesh(player) {
-    const color = CLASS_COLORS[player.class] || 0x00f5ff;
-    const group = buildCharacterModel(color, player.class, player.username, player.level || 1);
-    this.scene.add(group);
-    return group;
+  // ── Name-tag and HP bar sprites ───────────────────────────────────
+  _makeNameSprite(username, classColor, level) {
+    const c   = document.createElement('canvas');
+    c.width   = 256; c.height = 64;
+    const ctx = c.getContext('2d');
+    const hex = '#' + classColor.toString(16).padStart(6, '0');
+
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 0, 256, 64);
+
+    ctx.fillStyle = hex;
+    ctx.fillRect(6, 18, 26, 26);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 15px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(level), 19, 31);
+
+    ctx.font = 'bold 23px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = hex;
+    ctx.shadowColor = hex;
+    ctx.shadowBlur = 8;
+    ctx.fillText((username || '???').slice(0, 14), 40, 32);
+
+    const tex    = new THREE.CanvasTexture(c);
+    const mat    = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(1.8, 0.45, 1);
+    sprite.position.y = 200;   // model is scaled 0.011, so 200 units ≈ 2.2 world-units
+    return sprite;
+  }
+
+  _makeHpBar(classColor) {
+    const W = 128, H = 12;
+    const hex = '#' + classColor.toString(16).padStart(6, '0');
+
+    const bgC = document.createElement('canvas');
+    bgC.width = W; bgC.height = H;
+    const bgCtx = bgC.getContext('2d');
+    bgCtx.fillStyle = 'rgba(0,0,0,0.7)';
+    bgCtx.fillRect(0, 0, W, H);
+    const bgTex = new THREE.CanvasTexture(bgC);
+    const bgMat = new THREE.SpriteMaterial({ map: bgTex, transparent: true, depthTest: false });
+    const bg    = new THREE.Sprite(bgMat);
+    bg.scale.set(90.9, 7.27, 1);   // 1.0 / 0.011 ≈ 90.9  →  1.0 world-unit wide
+    bg.position.y = 230;
+    bg.visible = false;
+
+    const fC = document.createElement('canvas');
+    fC.width = W; fC.height = H;
+    const fCtx = fC.getContext('2d');
+    const fTex = new THREE.CanvasTexture(fC);
+    const fMat = new THREE.SpriteMaterial({ map: fTex, transparent: true, depthTest: false });
+    const fill = new THREE.Sprite(fMat);
+    fill.scale.set(90.9, 7.27, 1);
+    fill.position.y = 230;
+    fill.visible = false;
+
+    function update(hp, maxHp) {
+      const pct  = Math.max(0, Math.min(1, hp / maxHp));
+      const show = pct < 1.0;
+      bg.visible   = show;
+      fill.visible = show;
+      if (show) {
+        fCtx.clearRect(0, 0, W, H);
+        fCtx.fillStyle = hex;
+        fCtx.fillRect(0, 0, Math.round(pct * W), H);
+        fTex.needsUpdate = true;
+      }
+    }
+
+    return { bg, fill, update };
+  }
+
+  // ── Remote players (CharacterController-based) ────────────────────
+  async _spawnRemoteController(player) {
+    if (this._loadingIds.has(player.id)) return;
+    this._loadingIds.add(player.id);
+
+    const ctrl = new CharacterController(this.scene);
+    try {
+      await ctrl.load('/assets/characters/soldier.glb');
+    } catch (err) {
+      console.warn('[Game] Failed to load soldier.glb:', err);
+      this._loadingIds.delete(player.id);
+      return;
+    }
+
+    // Player might have left or died during async load
+    if (!this._loadingIds.has(player.id)) {
+      ctrl.dispose();
+      return;
+    }
+    this._loadingIds.delete(player.id);
+
+    // Attach name-tag and HP bar directly to the model (in model-local coords)
+    const color      = CLASS_COLORS[player.class] || 0x00f5ff;
+    const nameSprite = this._makeNameSprite(player.username, color, player.level || 1);
+    const hpBar      = this._makeHpBar(color);
+    const model      = ctrl.sceneObject;
+    if (model) {
+      model.add(nameSprite);
+      model.add(hpBar.bg);
+      model.add(hpBar.fill);
+    }
+
+    ctrl._neon_hpBar = hpBar;
+
+    // Set initial position before first frame
+    ctrl.setPosition(player.x, player.y || 1.65, player.z);
+    ctrl.setRotation(player.rotY || 0);
+
+    this._remoteControllers.set(player.id, ctrl);
   }
 
   updateRemotePlayers(players, dt = 0.016) {
@@ -209,46 +318,87 @@ export class Game {
 
     players.forEach((p) => {
       seen.add(p.id);
-      let g = this._remoteMeshes.get(p.id);
 
+      // Handle death
       if (p.dead) {
-        if (g && !g.neon_dying) {
-          g.neon_playDeath();
-          this._dyingModels.push(g);
-          this._remoteMeshes.delete(p.id);
+        const ctrl = this._remoteControllers.get(p.id);
+        if (ctrl && !ctrl._dead) {
+          ctrl.updateState(p.velocity, false, true, false);
+          this._dyingControllers.push({ ctrl, timer: 3.0 });
+          this._remoteControllers.delete(p.id);
+          this._loadingIds.delete(p.id);
         }
         return;
       }
 
-      if (!g) {
-        g = this._createRemoteMesh(p);
-        g.position.set(p.x, (p.y || 1.65) - 1.65, p.z);
-        this._remoteMeshes.set(p.id, g);
+      let ctrl = this._remoteControllers.get(p.id);
+
+      if (!ctrl) {
+        // Start async load (only once)
+        this._spawnRemoteController(p);
+        return;
       }
 
+      // Smooth position update (lerp toward server position)
       const k  = Math.min(1, 10 * dt);
       const ty = (p.y || 1.65) - 1.65;
-      g.position.x += (p.x  - g.position.x) * k;
-      g.position.y += (ty   - g.position.y) * k;
-      g.position.z += (p.z  - g.position.z) * k;
-      g.rotation.y  = p.rotY || 0;
-
-      if (g.neon_setHp && p.hp !== undefined) {
-        const MAX_HP = { SOLDIER: 100, GHOST: 75, WRAITH: 125 };
-        g.neon_setHp(p.hp, MAX_HP[p.class] || 100);
+      const mo = ctrl.sceneObject;
+      if (mo) {
+        mo.position.x += (p.x  - mo.position.x) * k;
+        mo.position.y += (ty   - mo.position.y) * k;
+        mo.position.z += (p.z  - mo.position.z) * k;
       }
+      ctrl.setRotation(p.rotY);
+
+      // HP bar
+      if (ctrl._neon_hpBar && p.hp !== undefined) {
+        const MAX_HP = { SOLDIER: 100, GHOST: 75, WRAITH: 125 };
+        ctrl._neon_hpBar.update(p.hp, MAX_HP[p.class] || 100);
+      }
+
+      // Animation state
+      ctrl.updateState(
+        p.velocity   || { x: 0, y: 0, z: 0 },
+        !!p.isShooting,
+        false,
+        !!p.isADS
+      );
     });
 
-    for (let i = this._dyingModels.length - 1; i >= 0; i--) {
-      const g = this._dyingModels[i];
-      if (g.neon_updateDeath(dt)) {
-        this.scene.remove(g);
-        this._dyingModels.splice(i, 1);
+    // Tick dying controllers — death animation plays while model fades out
+    const DEATH_TOTAL = 3.0;
+    const FADE_START  = 0.5;   // begin fading after 0.5 s of death animation
+    for (let i = this._dyingControllers.length - 1; i >= 0; i--) {
+      const entry = this._dyingControllers[i];
+      entry.timer -= dt;
+      entry.ctrl.update(dt);
+
+      // Compute fade: 1.0 → 0.0 over the last (DEATH_TOTAL - FADE_START) seconds
+      const elapsed = DEATH_TOTAL - entry.timer;
+      if (elapsed > FADE_START) {
+        const fadeProgress = (elapsed - FADE_START) / (DEATH_TOTAL - FADE_START);
+        entry.ctrl.setFade(Math.max(0, 1.0 - fadeProgress));
+      }
+
+      if (entry.timer <= 0) {
+        entry.ctrl.dispose();
+        this._dyingControllers.splice(i, 1);
       }
     }
 
-    this._remoteMeshes.forEach((g, id) => {
-      if (!seen.has(id)) { this.scene.remove(g); this._remoteMeshes.delete(id); }
+    // Tick live controllers
+    this._remoteControllers.forEach((ctrl) => ctrl.update(dt));
+
+    // Remove controllers for players that left
+    this._remoteControllers.forEach((ctrl, id) => {
+      if (!seen.has(id)) {
+        ctrl.dispose();
+        this._remoteControllers.delete(id);
+        this._loadingIds.delete(id);
+      }
+    });
+    this._loadingIds.forEach((id) => {
+      if (!seen.has(id)) this._loadingIds.delete(id);
     });
   }
 

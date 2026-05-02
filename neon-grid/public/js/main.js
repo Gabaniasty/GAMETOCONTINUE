@@ -28,7 +28,7 @@ const BARREL_TIP = {
 
 // ── Start sending position on connect ──────────────────────────────
 network._socket.on('connect', () => {
-  network.startSendingPosition(game.camera);
+  network.startSendingPosition(game.camera, game.controls);
 });
 
 // ── Shoot ──────────────────────────────────────────────────────────
