@@ -1,0 +1,141 @@
+Completely rewrite the shooting system for NEON GRID. It must feel precise,
+satisfying, and realistic. No wall-banging. Headshots deal extra damage.
+Hit registration must be server-authoritative with client-side prediction.
+
+── HITBOXES — two zones per player ──
+
+For each remote player, create TWO invisible hitbox meshes:
+
+  HEAD hitbox: SphereGeometry(0.25, 8, 8) — small, positioned at head height (y + 1.55)
+    mesh.userData.isHitbox = true
+    mesh.userData.hitZone = 'HEAD'
+    mesh.userData.playerId = id
+
+  BODY hitbox: CapsuleGeometry or BoxGeometry(0.65, 1.4, 0.55) — torso/legs (y + 0.7)
+    mesh.userData.isHitbox = true
+    mesh.userData.hitZone = 'BODY'
+    mesh.userData.playerId = id
+
+  Both are MeshBasicMaterial visible:false, added to scene for raycasting only.
+  Update positions each frame to match remote player position.
+
+── CLIENT — onShoot() in AWPWeapon.js ──
+
+When player fires:
+
+1. Build THREE.Raycaster from camera position + camera forward direction
+2. Intersect against: [...mapCollidableMeshes, ...allPlayerHitboxes]
+   (raycaster.intersectObjects with recursive:false on the flat list)
+3. Sort intersections by distance ascending
+4. Take first intersection:
+
+   if (first.object.userData.isMapGeometry):
+     → Bullet hits wall. Spawn wall impact effect at first.point.
+     → Do NOT emit shoot event to server.
+
+   if (first.object.userData.isHitbox):
+     const zone = first.object.userData.hitZone  // HEAD or BODY
+     const targetId = first.object.userData.playerId
+     → Spawn bullet tracer toward first.point
+     → Emit 'player:shoot' to server: { origin, direction, targetId, hitZone, distance }
+     → Show hit marker immediately (client prediction) — if server rejects, revert
+
+5. If intersections.length === 0:
+     → Bullet travels full 300 units, no effect
+
+── SERVER — player:shoot handler (authoritative) ──
+
+On 'player:shoot' { origin, direction, targetId, hitZone, distance }:
+
+// Sanity checks
+  if distance > 300 return
+  if shooter position vs reported origin > 6 units apart: return (teleport cheat)
+
+// Wall occlusion check
+  const targetCenter = { x: target.x, y: target.y + (hitZone==='HEAD' ? 1.55 : 0.8), z: target.z }
+  if (!isLineClearOfWalls(origin, targetCenter)) return  // wall blocked shot
+
+// Direction validation
+  const dot = dotProduct(normalize(origin→targetCenter), direction)
+  if dot < 0.82 return  // aim too far off
+
+// Apply damage
+  const baseDamage = hitZone === 'HEAD' ? 95 * 2.5 : 95   // AWP: headshot = 237 (instant kill), body = 95
+  target.hp -= baseDamage
+  const isHeadshot = hitZone === 'HEAD'
+
+// Emit results
+  emit to SHOOTER:
+    'shot:confirmed' { targetId, damage: baseDamage, isHeadshot, newTargetHp: target.hp }
+
+  emit to TARGET:
+    'player:damaged' { shooterId, damage: baseDamage, isHeadshot, newHp: target.hp, hitPos: targetCenter }
+
+  if target.hp <= 0:
+    emit to ALL: 'player:killed' { killerId, killerName, victimId, victimName, isHeadshot, weaponName: 'AWP' }
+    // Update DB, handle respawn (existing logic)
+
+── CLIENT — receive shot results ──
+
+'shot:confirmed':
+  if isHeadshot: sound.play('headshot_confirm'), hud.showHitmarker('head')
+  else:          sound.play('hit_confirm'),      hud.showHitmarker('body')
+
+'player:damaged' (you were hit):
+  sound.play('take_damage')
+  hud.showDamageVignette(damage)   // red flash around screen edges
+  hud.showDamageIndicator(shooterDirection)  // red arrow pointing toward shooter
+
+'player:killed' (someone died):
+  killFeed.add(killerName, victimName, isHeadshot)
+  if isHeadshot in feed: show skull icon instead of bullet icon
+
+── BULLET TRACER EFFECT ──
+
+For each shot fired (regardless of hit/miss):
+  Create a tracer line from gun barrel tip to impact/end point:
+    THREE.Line with 2 points, LineBasicMaterial color 0xffee88, opacity 0.7
+    Width simulated by layering 3 lines with slightly offset colors
+    Disappear after 120ms (fade opacity to 0)
+  
+  If hit wall: spawn wall sparks:
+    8 x tiny SphereGeometry(0.03) flying outward from impact point
+    color 0xffaa33, fade over 300ms, affected by gravity
+    PointLight(0xffaa33, 8, 2) at impact, fade 120ms
+
+  If hit player: spawn blood particles:
+    12 x tiny SphereGeometry(0.04) color 0xff2244
+    Spray direction based on bullet direction
+    fade over 400ms
+    PointLight(0xff0000, 6, 2) at impact, fade 150ms
+
+── HUD HIT MARKERS ──
+
+Crosshair in center always:
+  4-line cross, thin, color rgba(255,255,255,0.7)
+  Gap in center: 8px
+
+On body hit: lines snap outward and turn red/orange, snap back in 200ms
+On headshot hit: lines flash yellow, pulse once, crosshair briefly becomes a skull for 300ms
+
+── KILL FEED ──
+
+Top-right corner, last 6 kills:
+  Format: [killerName]  [weapon icon]  [victimName]
+  If headshot: add orange HS badge after weapon icon
+  New entries slide in from the right
+  Each entry fades out after 8 seconds
+  Kill feed entry background: rgba(0,0,0,0.5) with left border in killer's rank color
+
+ACCEPTANCE CRITERIA:
+✓ Bullets NEVER pass through walls under any circumstances
+✓ Headshots deal 2.5x damage (instant kill with AWP on full HP)
+✓ Body shots deal 95 damage
+✓ Hit marker changes appearance for headshot vs body hit
+✓ Server rejects shots where a wall is between shooter and target
+✓ Server rejects shots aimed too far off from target direction
+✓ Blood particles appear at hit location
+✓ Wall sparks appear at wall impact location
+✓ Bullet tracer is visible for 120ms after every shot
+✓ Kill feed shows headshot badge for headshot kills
+✓ Damage vignette and directional indicator show when you're hit
