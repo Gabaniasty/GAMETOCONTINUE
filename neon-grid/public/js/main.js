@@ -1,66 +1,75 @@
-import { Game }    from './Game.js';
-import { Network } from './Network.js';
-import { Hud }     from './Hud.js';
+import { Game }         from './Game.js';
+import { Network }      from './Network.js';
+import { Hud }          from './Hud.js';
+import { BulletSystem } from './BulletSystem.js';
+import { SoundSystem }  from './SoundSystem.js';
 
 console.log('NEON GRID client loaded');
 
 const game    = new Game('gameCanvas');
 const network = new Network();
 const hud     = new Hud();
+const bullets = new BulletSystem(game.scene);
+const sound   = new SoundSystem();
 
 // ── Start sending position on connect ──────────────────────────
 network._socket.on('connect', () => {
   network.startSendingPosition(game.camera);
 });
 
-// ── Shoot callback ─────────────────────────────────────────────
+// ── Shoot ───────────────────────────────────────────────────────
 game.controls.onShoot = () => {
   const origin = {
     x: game.camera.position.x,
     y: game.camera.position.y,
     z: game.camera.position.z,
   };
-  const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(game.camera.quaternion);
-  const direction = { x: dir.x, y: dir.y, z: dir.z };
+  const dir3 = new THREE.Vector3(0, 0, -1).applyQuaternion(game.camera.quaternion);
+  const direction = { x: dir3.x, y: dir3.y, z: dir3.z };
 
-  // Visual FX immediately on client
-  game.spawnTracer(origin, direction);
+  // Immediate client-side feedback
+  sound.playGunshot();
+  game.triggerRecoil();
   game.spawnMuzzleFlash(game.camera);
+  bullets.spawnBullet(origin, direction, game.camera);
 
   network.sendShoot(origin, direction);
 };
 
-// ── Combat network callbacks ───────────────────────────────────
+// ── Combat network callbacks ────────────────────────────────────
 
-// We hit someone
+// Our bullet hit someone
 network.onHit = ({ targetId, damage, newHp }) => {
   hud.flashHit();
-  // Particles at approximate target position
+  sound.playHitConfirm();
   const remote = network.getRemotePlayers().find(p => p.id === targetId);
-  if (remote) game.spawnHitParticles({ x: remote.x, y: remote.y, z: remote.z });
+  if (remote) {
+    const hitPos = { x: remote.x, y: remote.y, z: remote.z };
+    game.spawnHitParticles(hitPos);
+    bullets.onHit(hitPos);
+  }
 };
 
 // We were hit
 network.onDamaged = ({ shooterId, damage, newHp }) => {
   hud.setHp(newHp);
+  sound.playTakeDamage();
 };
 
 // A kill happened
 network.onKilled = ({ killerId, killerName, victimId, victimName }) => {
   hud.showKill(killerName, victimName);
-
   const localId = network.getLocalId();
-
   if (killerId === localId) {
     hud.showKillNotification();
+    sound.playKill();
   }
-
   if (victimId === localId) {
     hud.showDeathScreen(3);
   }
 };
 
-// A player (possibly us) respawned
+// A player respawned
 network.onRespawned = ({ id, x, y, z, hp }) => {
   const localId = network.getLocalId();
   if (id === localId) {
@@ -72,7 +81,7 @@ network.onRespawned = ({ id, x, y, z, hp }) => {
   }
 };
 
-// ── Patch game loop to inject remote player updates ────────────
+// ── Patched game loop ───────────────────────────────────────────
 game._animate = function () {
   requestAnimationFrame(() => game._animate());
 
@@ -90,8 +99,8 @@ game._animate = function () {
     game.onGround  = false;
   }
   if (!game.onGround) {
-    game.yVelocity       += game.GRAVITY * dt;
-    camera.position.y    += game.yVelocity * dt;
+    game.yVelocity     += game.GRAVITY * dt;
+    camera.position.y  += game.yVelocity * dt;
     if (camera.position.y <= game.FLOOR_Y) {
       camera.position.y = game.FLOOR_Y;
       game.yVelocity    = 0;
@@ -102,7 +111,12 @@ game._animate = function () {
   controls.applyToCamera();
   game.updateRemotePlayers(network.getRemotePlayers());
   game._tickVfx(dt);
+  game.tickWeapon(dt);
+  bullets.update(dt);
+
+  game.renderer.clear();
   game.renderer.render(game.scene, camera);
+  game.renderWeapon();
 };
 
 game.start();
