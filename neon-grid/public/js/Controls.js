@@ -23,12 +23,12 @@ const WALK_SWAY      = 0.006;
 const SPRINT_SWAY    = 0.010;
 
 // ── Collision constants ────────────────────────────────────────────────────
-const PLAYER_RADIUS = 0.42;  // horizontal body half-width (square footprint)
-const GROUND_MARGIN = 0.55;  // how far above a surface top the feet can be and still land
+const PLAYER_RADIUS = 0.42;
+const GROUND_MARGIN = 0.55;
 
 // ── Ladder teleport constants ─────────────────────────────────────────────
-const LADDER_COOLDOWN   = 0.8;   // seconds between teleports
-const CATWALK_THRESHOLD = 4.0;   // y above which player is considered on catwalk
+const LADDER_COOLDOWN   = 0.8;
+const CATWALK_THRESHOLD = 4.0;
 
 export class Controls {
   constructor(camera, domElement) {
@@ -37,7 +37,10 @@ export class Controls {
 
     this.yaw   = 0;
     this.pitch = 0;
-    this.sensitivity = parseFloat(localStorage.getItem('ng_sensitivity') || '0.0018');
+    this.sensitivity    = parseFloat(localStorage.getItem('ng_sensitivity')     || '18') / 10000;
+    this.adsSensitivity = parseFloat(localStorage.getItem('ng_ads_sensitivity') || '6')  / 10000;
+    const _rawAdsToggle = localStorage.getItem('ng_ads_toggle');
+    this._adsToggle     = _rawAdsToggle === '1' || _rawAdsToggle === 'true';
 
     this.keys      = {};
     this.isLocked  = false;
@@ -49,6 +52,7 @@ export class Controls {
     this._crosshair  = null;
     this._lastMouseX = null;
     this._lastMouseY = null;
+    this._inputLocked = false;
 
     this._vel         = { x: 0, y: 0, z: 0 };
     this._currentEyeY = EYE_Y;
@@ -78,10 +82,35 @@ export class Controls {
     this._playerClass  = localStorage.getItem('ng_class') || 'SOLDIER';
     this._lastShotTime = 0;
 
+    // Invert Y from settings
+    this._invertY = localStorage.getItem('ng_invert_y') === 'true';
+
     // Ladder teleport cooldown
     this._ladderCooldown = 0;
 
     this._bindEvents();
+
+    // Listen for settings changes
+    document.addEventListener('ng-settings-changed', (e) => {
+      if ('ng_sensitivity' in e.detail) {
+        this.sensitivity = e.detail.ng_sensitivity / 10000;
+      }
+      if ('ng_ads_sensitivity' in e.detail) {
+        this.adsSensitivity = e.detail.ng_ads_sensitivity / 10000;
+      }
+      if ('ng_ads_toggle' in e.detail) {
+        this._adsToggle = !!e.detail.ng_ads_toggle;
+      }
+      if ('ng_invert_y' in e.detail) {
+        this._invertY = e.detail.ng_invert_y;
+      }
+    });
+  }
+
+  // ── Input locking (e.g. death screen) ───────────────────────────────────
+  setInputLocked(locked) {
+    this._inputLocked = !!locked;
+    if (locked) this.keys = {};
   }
 
   // Kept for API compatibility — bullets still use mesh raycasts
@@ -102,17 +131,14 @@ export class Controls {
 
   // ── Main physics update ──────────────────────────────────────────────────
   update(camera, dt) {
-    if (!this.isPlaying) return;
+    if (!this.isPlaying || this._inputLocked) return;
 
-    // Tick cooldown
     if (this._ladderCooldown > 0) this._ladderCooldown -= dt;
 
-    // Step 0: crouch lerp
     this._crouching = !!(this.keys['KeyC'] || this.keys['ControlLeft'] || this.keys['ControlRight']);
     const targetEyeY = this._crouching ? CROUCH_Y : EYE_Y;
     this._currentEyeY += (targetEyeY - this._currentEyeY) * Math.min(1, 12 * dt);
 
-    // Step 1: read input
     let ix = 0, iz = 0;
     if (!this.isDead) {
       if (this.keys['KeyW'] || this.keys['ArrowUp'])    iz -= 1;
@@ -131,7 +157,6 @@ export class Controls {
     const sprinting  = this.isSprinting() && onGround && !this._crouching && iz < -0.1;
     const targetSpeed = this._crouching ? CROUCH_SPEED : sprinting ? SPRINT_SPEED : WALK_SPEED;
 
-    // Step 2+3: acceleration / gravity
     if (onGround) {
       if (hasInput) {
         const k = Math.min(1, GROUND_ACCEL * dt);
@@ -162,21 +187,14 @@ export class Controls {
       this._vel.y += GRAVITY * dt;
     }
 
-    // Step 4: integrate position
     camera.position.x += this._vel.x * dt;
     camera.position.z += this._vel.z * dt;
     camera.position.y += this._vel.y * dt;
 
-    // Step 5: wall collision (AABB) — push before ground check
     this._doWallsAABB(camera);
-
-    // Step 6: ground detection (AABB)
     this._onGround = this._doGroundAABB(camera);
-
-    // Step 7: ladder teleport
     this._doLadderTeleport(camera);
 
-    // Step 8: head bob
     const hspd = Math.sqrt(this._vel.x ** 2 + this._vel.z ** 2);
     if (hspd > 0.5 && this._onGround && !this._crouching && !this.isDead) {
       this._bobTimer += dt * (sprinting ? SPRINT_BOB_SPD : WALK_BOB_SPD);
@@ -207,13 +225,11 @@ export class Controls {
       const onCatwalk = py > CATWALK_THRESHOLD;
 
       if (!onCatwalk && this._onGround) {
-        // Ground level → teleport up to catwalk
         camera.position.y = CATWALK_EYE_Y;
         this._vel.y = 0;
         this._onGround = true;
         this._ladderCooldown = LADDER_COOLDOWN;
       } else if (onCatwalk && this._onGround) {
-        // Catwalk level → teleport down to ground
         camera.position.y = GROUND_EYE_Y;
         this._vel.y = 0;
         this._onGround = true;
@@ -232,12 +248,10 @@ export class Controls {
 
     let groundY = -Infinity;
 
-    // Flat floor at y = 0 (always present)
     if (feetY <= GROUND_MARGIN) {
       groundY = 0;
     }
 
-    // AABB top surfaces
     const activeAABBs = this._activeAABBs || ARENA_AABBS;
     for (const box of activeAABBs) {
       if (px + R <= box.minX || px - R >= box.maxX) continue;
@@ -256,7 +270,6 @@ export class Controls {
       return camera.position.y <= snapY + 0.02;
     }
 
-    // Prevent falling through absolute world floor
     const absFloor = this._currentEyeY - 0.01;
     if (camera.position.y < absFloor) {
       camera.position.y = absFloor;
@@ -343,14 +356,13 @@ export class Controls {
   _bindEvents() {
     document.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    // Separate callback for AWP shoot (bypasses Controls fire-rate gate)
     this.onAwpShoot = null;
 
     document.addEventListener('mousedown', (e) => {
+      if (this._inputLocked) return;
       if (e.button === 0) {
         if (!this.isPlaying) { this._enter(); return; }
         if (this.isDead) return;
-        // AWP: when scoped, delegate entirely to AWPWeapon (own rate limit + bolt)
         if (this.isScoped && this._playerClass === 'WRAITH' && this.onAwpShoot) {
           this.onAwpShoot();
           return;
@@ -362,20 +374,34 @@ export class Controls {
       if (e.button === 2) {
         if (!this.isPlaying || this.isDead) return;
         if (this._playerClass !== 'WRAITH') return;
-        if (this.isScoped) return;
-        this.isScoped = true;
-        if (this.onScope) this.onScope();
+        if (this._adsToggle) {
+          // Toggle mode: each right-click flips scope state
+          if (this.isScoped) {
+            this.isScoped = false;
+            if (this.onUnscope) this.onUnscope();
+          } else {
+            this.isScoped = true;
+            if (this.onScope) this.onScope();
+          }
+        } else {
+          // Hold mode: scope while button held
+          if (this.isScoped) return;
+          this.isScoped = true;
+          if (this.onScope) this.onScope();
+        }
       }
     });
 
     document.addEventListener('mouseup', (e) => {
       if (e.button !== 2) return;
+      if (this._adsToggle) return; // toggle mode: mouseup does NOT unscope
       if (!this.isScoped) return;
       this.isScoped = false;
       if (this.onUnscope) this.onUnscope();
     });
 
     document.addEventListener('keydown', (e) => {
+      if (this._inputLocked) return;
       this.keys[e.code] = true;
       if (e.code === 'Escape') {
         if (this.isScoped) {
@@ -388,16 +414,13 @@ export class Controls {
         return;
       }
       if (this.isPlaying && !this.isDead) {
-        // R — reload (AWP)
         if ((e.code === 'KeyR') && this.onReload) {
           this.onReload();
         }
-        // Shift while scoped — hold breath (AWP)
         if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && this.isScoped && this.onHoldBreath) {
           if (!this._breathHeld) {
             this._breathHeld = true;
             this.onHoldBreath();
-            // Auto-release after 3 s to match AWP breath window
             if (this._breathTimeout) clearTimeout(this._breathTimeout);
             this._breathTimeout = setTimeout(() => { this._breathHeld = false; }, 3100);
           }
@@ -424,7 +447,7 @@ export class Controls {
     });
 
     document.addEventListener('mousemove', (e) => {
-      if (!this.isPlaying || this.isDead) return;
+      if (!this.isPlaying || this.isDead || this._inputLocked) return;
       let dx, dy;
       if (this.isLocked) {
         dx = e.movementX; dy = e.movementY;
@@ -433,9 +456,10 @@ export class Controls {
         dx = e.clientX - this._lastMouseX; dy = e.clientY - this._lastMouseY;
         this._lastMouseX = e.clientX; this._lastMouseY = e.clientY;
       }
-      const sens = this.sensitivity * (this.isScoped ? 1 / 6 : 1);
+      const sens = this.isScoped ? this.adsSensitivity : this.sensitivity;
+      const invertFactor = this._invertY ? -1 : 1;
       this.yaw   -= dx * sens;
-      this.pitch -= dy * sens;
+      this.pitch -= dy * sens * invertFactor;
       const MAX_PITCH = (80 * Math.PI) / 180;
       this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch));
     });

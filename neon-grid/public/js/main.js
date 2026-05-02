@@ -56,7 +56,8 @@ network._socket.on('connect', () => {
 // ── Shared shoot helper (fires raycast + network notify) ─────────────
 // Headshot detection: player sphere center is at ~y=0.8 for standing players
 // (eye level 1.65 - offset 0.85). Upper ~30% of sphere radius 0.7 → threshold 1.1.
-let _lastShotWasHeadshot = false;
+let _lastShotWasHeadshot  = false;
+let _pendingKillIsHeadshot = false;
 
 function _doFireShot() {
   const origin = {
@@ -122,14 +123,25 @@ if (localClass === 'WRAITH' && game._awpWeapon) {
 // ── Combat callbacks ───────────────────────────────────────────────
 
 network.onHit = ({ targetId, damage, newHp }) => {
+  const isHeadshot = _lastShotWasHeadshot;
+  const isLethal   = newHp <= 0;
+  _lastShotWasHeadshot = false;
+
   hud.flashHit();
   hud.showHitMarker(false);
-  if (_lastShotWasHeadshot) {
+  hud.showDamageNumber(damage);
+
+  if (isHeadshot) {
     sound.play_headshot_confirm();
   } else {
     sound.play_hit_confirm();
   }
-  _lastShotWasHeadshot = false;
+
+  // Remember if this lethal hit was a headshot so onKilled can show the skull
+  if (isLethal) {
+    _pendingKillIsHeadshot = isHeadshot;
+  }
+
   const remote = network.getRemotePlayers().find(p => p.id === targetId);
   if (remote) {
     const hitPos = { x: remote.x, y: remote.y, z: remote.z };
@@ -143,29 +155,44 @@ network.onDamaged = ({ shooterId, damage, newHp }) => {
   sound.play_take_damage();
 };
 
-network.onKilled = ({ killerId, killerName, victimId, victimName, killerClass }) => {
+network.onKilled = ({ killerId, killerName, victimId, victimName, killerClass, killerRp = 0 }) => {
   hud.showKill(killerName, victimName);
   const localId = network.getLocalId();
 
   if (killerId === localId) {
     hud.showKillNotification();
-    hud.showHitMarker(true);
+    // Skull/yellow flash only for headshot kills; regular flash for body-shot kills
+    hud.showHitMarker(_pendingKillIsHeadshot);
+    _pendingKillIsHeadshot = false;
     sound.play_kill();
   }
 
   if (victimId === localId) {
     game.controls.isDead = true;
-    hud.showDeathScreen(3, killerName);
+    game.controls.setInputLocked(true);
+    hud.showDeathScreen(3, killerName, killerRp);
   }
 };
+
+// ── RP gain notification at round end ─────────────────────────────────
+network._socket.on('player:stats_update', ({ rpChange }) => {
+  if (rpChange && rpChange !== 0) {
+    hud.showRpGain(rpChange);
+  }
+});
 
 network.onAnnouncement = (type) => {
   sound.playAnnouncement(type);
 };
 
+let _initialSpawnDone = false;
 network.onRespawned = ({ id, x, y, z, hp }) => {
   const localId = network.getLocalId();
   if (id === localId) {
+    if (!_initialSpawnDone) {
+      _initialSpawnDone = true;
+      if (window._advanceLoadingStage) window._advanceLoadingStage(3);
+    }
     hud.hideDeathScreen();
     hud.setHp(hp, maxHp);
     game.camera.position.set(x, y, z);
@@ -173,6 +200,7 @@ network.onRespawned = ({ id, x, y, z, hp }) => {
     game.controls._vel.y = 0;
     game.controls._vel.z = 0;
     game.controls.isDead = false;
+    game.controls.setInputLocked(false);
     game.showSpawnProtection();
     // Reset AWP ammo on respawn
     if (game._awpWeapon) {
@@ -373,10 +401,38 @@ game._animate = function () {
 
 let _mapLoaded = false;
 
+// ── FOV + settings listener ──────────────────────────────────────────
+document.addEventListener('ng-settings-changed', (e) => {
+  if ('ng_fov' in e.detail) {
+    const fov = e.detail.ng_fov;
+    game.camera.fov = fov;
+    game.camera.updateProjectionMatrix();
+  }
+  if ('ng_motion_blur' in e.detail) {
+    const gc = document.getElementById('gameCanvas');
+    if (gc) gc.style.filter = e.detail.ng_motion_blur ? 'blur(0.6px)' : '';
+  }
+});
+
+// Apply stored FOV on boot
+const _storedFov = parseFloat(localStorage.getItem('ng_fov') || '75');
+if (game.camera) {
+  game.camera.fov = _storedFov;
+  game.camera.updateProjectionMatrix();
+}
+
+// Apply stored motion blur on boot (mirrors the ng-settings-changed handler)
+const _storedMotionBlur = localStorage.getItem('ng_motion_blur');
+if (_storedMotionBlur === '1' || _storedMotionBlur === 'true') {
+  const gc = document.getElementById('gameCanvas');
+  if (gc) gc.style.filter = 'blur(0.6px)';
+}
+
 function _loadMap(mapId) {
   if (_mapLoaded) return;
   _mapLoaded = true;
 
+  if (window._advanceLoadingStage) window._advanceLoadingStage(0);
   const loadingText = document.getElementById('loadingText');
   if (loadingText) loadingText.textContent = 'LOADING MAP...';
 
@@ -389,12 +445,14 @@ function _loadMap(mapId) {
       game.controls.setLadderZones([]);
       bullets.setCollidableMeshes(meshes);
       game.start();
+      if (window._advanceLoadingStage) window._advanceLoadingStage(2);
     });
   } else {
     game.loadMap('/assets/maps/arena.glb', (map) => {
       game.controls.setCollidableMeshes(map.getCollidableMeshes());
       bullets.setCollidableMeshes(map.getCollidableMeshes());
       game.start();
+      if (window._advanceLoadingStage) window._advanceLoadingStage(2);
     });
   }
 }

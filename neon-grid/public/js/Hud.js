@@ -1,3 +1,5 @@
+import { renderRankBadge, getRankFromRP } from './RankBadge.js';
+
 export class Hud {
   constructor() {
     this._hp        = 100;
@@ -14,9 +16,22 @@ export class Hud {
     this._playerClass = localStorage.getItem('ng_class')    || 'SOLDIER';
     this._username    = localStorage.getItem('ng_username') || 'OPERATIVE';
     this._CLASS_COLORS = { SOLDIER: '#00f5ff', GHOST: '#ff2d78', WRAITH: '#7b2fff' };
+    this._matchKills  = 0;
+    this._matchDeaths = 0;
+    this._playerRp    = parseInt(localStorage.getItem('ng_rp') || '0', 10);
 
     this._addAnimStyles();
     this._build();
+
+    // Listen for settings changes (FPS visibility)
+    document.addEventListener('ng-settings-changed', (e) => {
+      if ('ng_show_fps' in e.detail && this._el.fps) {
+        this._el.fps.style.display = e.detail.ng_show_fps ? '' : 'none';
+      }
+    });
+    // Apply persisted FPS show/hide
+    const showFps = localStorage.getItem('ng_show_fps');
+    if (showFps === 'false' && this._el.fps) this._el.fps.style.display = 'none';
   }
 
   _addAnimStyles() {
@@ -27,6 +42,14 @@ export class Hud {
       @keyframes xp-float {
         0%   { opacity:1; transform:translateX(-50%) translateY(0); }
         100% { opacity:0; transform:translateX(-50%) translateY(-56px); }
+      }
+      @keyframes rp-float {
+        0%   { opacity:1; transform:translateX(-50%) translateY(0); }
+        100% { opacity:0; transform:translateX(-50%) translateY(-72px); }
+      }
+      @keyframes dmg-float {
+        0%   { opacity:1; transform:translate(-50%,-50%) translateY(0); }
+        100% { opacity:0; transform:translate(-50%,-50%) translateY(-55px); }
       }
       @keyframes level-flash {
         0%,100% { opacity:0; }
@@ -47,9 +70,10 @@ export class Hud {
         16%     { text-shadow:-4px 0 #00f5ff,0 0 40px #ff2d78; transform:translateX(4px); }
         24%     { text-shadow:none; transform:none; }
       }
-      @keyframes crosshair-hit {
-        0%   { transform:translate(-50%,-50%) scale(1.3); }
-        100% { transform:translate(-50%,-50%) scale(1); }
+      @keyframes ch-spread {
+        0%   { gap: 4px; }
+        40%  { gap: 9px; }
+        100% { gap: 4px; }
       }
       @keyframes announce-scale-in {
         0%      { transform:translate(-50%,-50%) scale(1.3); opacity:0; }
@@ -60,6 +84,12 @@ export class Hud {
       @keyframes spree-pulse {
         0%,100% { text-shadow:0 0 24px #ff2d78, 0 0 50px #ff2d78; }
         50%     { text-shadow:0 0 40px #ff2d78, 0 0 80px #ff2d78, 0 0 120px rgba(255,45,120,0.4); }
+      }
+      @keyframes skull-pop {
+        0%   { opacity:0; transform:translate(-50%,-50%) scale(0.5); }
+        25%  { opacity:1; transform:translate(-50%,-50%) scale(1.2); }
+        75%  { opacity:1; transform:translate(-50%,-50%) scale(1); }
+        100% { opacity:0; transform:translate(-50%,-50%) scale(1); }
       }
     `;
     document.head.appendChild(s);
@@ -76,6 +106,8 @@ export class Hud {
     `;
     document.body.appendChild(root);
 
+    this._buildTopCenter(root);
+    this._buildTopLeft(root);
     this._buildHp(root);
     this._buildXpBar(root);
     this._buildAmmoMinimap(root);
@@ -88,6 +120,53 @@ export class Hud {
     this._listenAnnouncements();
   }
 
+  // ── Top-center: match timer + team score ─────────────────────────────
+  _buildTopCenter(root) {
+    const wrap = this._el.topCenter = document.createElement('div');
+    wrap.style.cssText = `
+      position:absolute; top:14px; left:50%; transform:translateX(-50%);
+      display:flex; flex-direction:column; align-items:center; gap:4px;
+    `;
+
+    const timerEl = this._el.matchTimer = document.createElement('div');
+    timerEl.style.cssText = `
+      font-size:1.1rem; font-weight:900; letter-spacing:.22em; color:#e0e0ff;
+      text-shadow:0 0 8px rgba(224,224,255,0.35); min-width:70px; text-align:center;
+    `;
+    timerEl.textContent = '';
+
+    const scoreEl = this._el.teamScore = document.createElement('div');
+    scoreEl.style.cssText = `
+      font-size:.55rem; letter-spacing:.2em; color:rgba(224,224,255,0.5); text-align:center;
+    `;
+    scoreEl.textContent = '';
+
+    wrap.append(timerEl, scoreEl);
+    root.appendChild(wrap);
+  }
+
+  // ── Top-left: rank badge + match K/D ────────────────────────────────
+  _buildTopLeft(root) {
+    const wrap = this._el.topLeft = document.createElement('div');
+    wrap.style.cssText = `
+      position:absolute; top:14px; left:20px;
+      display:flex; align-items:center; gap:8px;
+    `;
+
+    const badgeWrap = this._el.hudRankBadge = document.createElement('div');
+    const rp  = this._playerRp;
+    const col = this._col();
+    const entry = getRankFromRP(rp);
+    badgeWrap.appendChild(renderRankBadge(entry.tier, null, 'sm'));
+
+    const kdEl = this._el.matchKD = document.createElement('div');
+    kdEl.style.cssText = `font-size:.5rem; letter-spacing:.15em; color:rgba(224,224,255,0.4);`;
+    kdEl.textContent = '';
+
+    wrap.append(badgeWrap, kdEl);
+    root.appendChild(wrap);
+  }
+
   // ── Bottom-left: player info + segmented HP ─────────────────────────
   _buildHp(root) {
     const wrap = this._el.hpWrap = document.createElement('div');
@@ -96,10 +175,9 @@ export class Hud {
       display:flex; flex-direction:column; gap:5px;
     `;
 
-    // Player info row
     const infoRow = document.createElement('div');
     infoRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:2px;';
-    const col = this._col();
+    const col  = this._col();
     const icon = document.createElement('div');
     icon.style.cssText = `width:8px; height:8px; background:${col}; box-shadow:0 0 6px ${col}; flex-shrink:0;`;
     const nameEl = document.createElement('span');
@@ -110,12 +188,10 @@ export class Hud {
     lvlBadge.textContent = 'LVL 1';
     infoRow.append(icon, nameEl, lvlBadge);
 
-    // HP label
     const hpLabel = document.createElement('div');
     hpLabel.style.cssText = 'font-size:.55rem; letter-spacing:.2em; color:#ff2d78; text-shadow:0 0 6px #ff2d78;';
     hpLabel.textContent = 'HEALTH';
 
-    // Segmented bar (10 segments)
     const segsWrap = this._el.hpSegs = document.createElement('div');
     segsWrap.style.cssText = 'display:flex; gap:3px;';
     for (let i = 0; i < 10; i++) {
@@ -162,7 +238,6 @@ export class Hud {
       display:flex; flex-direction:column; align-items:flex-end; gap:8px;
     `;
 
-    // Ammo
     const ammoWrap = document.createElement('div');
     ammoWrap.style.cssText = 'display:flex; flex-direction:column; align-items:flex-end; gap:2px;';
     const ammoLbl = document.createElement('div');
@@ -173,7 +248,6 @@ export class Hud {
     ammoNum.textContent = '∞';
     ammoWrap.append(ammoLbl, ammoNum);
 
-    // Minimap
     const mapWrap = document.createElement('div');
     mapWrap.style.cssText = 'display:flex; flex-direction:column; align-items:flex-end; gap:3px;';
     const mapLbl = document.createElement('div');
@@ -222,6 +296,11 @@ export class Hud {
     root.appendChild(ring);
   }
 
+  // ── Center: RP gain notification ─────────────────────────────────────
+  _buildRpGain(root) {
+    // No persistent element; spawned dynamically per showRpGain()
+  }
+
   // ── Center: kill notification ───────────────────────────────────────
   _buildKillNotif(root) {
     const kn = this._el.killNotif = document.createElement('div');
@@ -239,30 +318,37 @@ export class Hud {
     const ds = this._el.deathScreen = document.createElement('div');
     ds.style.cssText = `
       position:absolute; inset:0;
-      background:rgba(0,0,0,0.7);
+      background:rgba(0,0,0,0.72);
       display:none; flex-direction:column;
-      align-items:center; justify-content:center; gap:.9rem;
+      align-items:center; justify-content:center; gap:1rem;
     `;
+
     const dTitle = document.createElement('div');
     dTitle.style.cssText = `
-      font-size:clamp(2rem,6vw,4rem); font-weight:900; letter-spacing:.25em;
+      font-size:clamp(2.5rem,7vw,5rem); font-weight:900; letter-spacing:.28em;
       color:#ff2d78; animation:death-glitch 1.8s ease-in-out infinite;
     `;
-    dTitle.textContent = 'YOU WERE ELIMINATED';
+    dTitle.textContent = 'ELIMINATED';
 
-    const dKiller = this._el.deathKiller = document.createElement('div');
-    dKiller.style.cssText = `
-      font-size:.9rem; letter-spacing:.2em; color:#e0e0ff;
+    const dKillerRow = this._el.deathKillerRow = document.createElement('div');
+    dKillerRow.style.cssText = `
+      display:flex; align-items:center; gap:.75rem;
+      font-size:.78rem; letter-spacing:.18em; color:#e0e0ff;
       text-shadow:0 0 8px rgba(224,224,255,0.3);
     `;
+
+    const dKillerLabel = this._el.deathKillerLabel = document.createElement('span');
+    const dKillerBadge = this._el.deathKillerBadge = document.createElement('div');
+
+    dKillerRow.append(dKillerLabel, dKillerBadge);
 
     const dTimer = this._el.deathTimer = document.createElement('div');
     dTimer.style.cssText = `
       font-size:.72rem; letter-spacing:.22em;
-      color:rgba(224,224,255,0.45); margin-top:.5rem;
+      color:rgba(224,224,255,0.45); margin-top:.25rem;
     `;
 
-    ds.append(dTitle, dKiller, dTimer);
+    ds.append(dTitle, dKillerRow, dTimer);
     root.appendChild(ds);
   }
 
@@ -292,6 +378,72 @@ export class Hud {
   }
 
   // ═══ Public API ════════════════════════════════════════════════════════
+
+  // ── Match timer ─────────────────────────────────────────────────────
+  setMatchTimer(seconds) {
+    if (!this._el.matchTimer) return;
+    if (seconds == null || seconds < 0) {
+      this._el.matchTimer.textContent = '';
+      return;
+    }
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    this._el.matchTimer.textContent =
+      String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+
+  // ── Team score ──────────────────────────────────────────────────────
+  setScore(teamA, teamB, localTeam) {
+    if (!this._el.teamScore) return;
+    const col   = this._col();
+    const aCol  = localTeam === 'A' ? col : 'rgba(224,224,255,0.55)';
+    const bCol  = localTeam === 'B' ? col : 'rgba(224,224,255,0.55)';
+    this._el.teamScore.innerHTML =
+      `<span style="color:${aCol}">A ${teamA}</span>` +
+      `<span style="color:rgba(224,224,255,0.3);margin:0 .5em">—</span>` +
+      `<span style="color:${bCol}">${teamB} B</span>`;
+  }
+
+  // ── Match K/D ───────────────────────────────────────────────────────
+  setMatchKD(kills, deaths) {
+    this._matchKills  = kills;
+    this._matchDeaths = deaths;
+    if (!this._el.matchKD) return;
+    this._el.matchKD.textContent = `K:${kills}  D:${deaths}`;
+  }
+
+  // ── RP gain notification ─────────────────────────────────────────────
+  showRpGain(amount) {
+    const el = document.createElement('div');
+    el.textContent = `+${amount} RP`;
+    el.style.cssText = `
+      position:absolute; top:38%; right:22%;
+      font-size:1.3rem; font-weight:900; letter-spacing:.2em;
+      color:#7b2fff; text-shadow:0 0 12px #7b2fff, 0 0 24px #7b2fff;
+      pointer-events:none; white-space:nowrap;
+      animation:rp-float 1.8s ease-out forwards;
+    `;
+    this._el.root.appendChild(el);
+    setTimeout(() => el.remove(), 1800);
+  }
+
+  // ── Damage numbers ───────────────────────────────────────────────────
+  showDamageNumber(amount) {
+    const el = document.createElement('div');
+    el.textContent = String(Math.round(amount));
+    const offX = (Math.random() - 0.5) * 14 + '%';
+    const offY = (Math.random() - 0.5) * 8 + '%';
+    el.style.cssText = `
+      position:absolute;
+      top:calc(50% + ${offY}); left:calc(50% + ${offX});
+      font-size:1.1rem; font-weight:900; letter-spacing:.08em;
+      color:#ff2d78; text-shadow:0 0 8px #ff2d78;
+      pointer-events:none; white-space:nowrap;
+      animation:dmg-float 1.1s ease-out forwards;
+    `;
+    this._el.root.appendChild(el);
+    setTimeout(() => el.remove(), 1100);
+  }
 
   setHp(hp, maxHp) {
     if (maxHp !== undefined) this._maxHp = maxHp;
@@ -401,22 +553,34 @@ export class Hud {
     this._killNotifTimer = setTimeout(() => { el.style.opacity = '0'; }, 2000);
   }
 
-  showDeathScreen(seconds = 3, killerName = '') {
+  showDeathScreen(seconds = 3, killerName = '', killerRp = 0) {
     this._dead = true;
     const ds = this._el.deathScreen;
     ds.style.display = 'flex';
 
-    if (this._el.deathKiller) {
-      this._el.deathKiller.textContent =
-        killerName ? `KILLED BY: ${killerName.toUpperCase()}` : '';
+    // Grayscale + blur on game canvas
+    const gc = document.getElementById('gameCanvas');
+    if (gc) {
+      gc.style.filter       = 'grayscale(1) blur(2px)';
+      gc.style.pointerEvents = 'none';
+    }
+
+    // Killer info
+    if (this._el.deathKillerBadge) {
+      this._el.deathKillerBadge.innerHTML = '';
+      const entry = getRankFromRP(killerRp);
+      this._el.deathKillerBadge.appendChild(renderRankBadge(entry.tier, null, 'md'));
+    }
+    if (this._el.deathKillerLabel) {
+      this._el.deathKillerLabel.textContent = killerName
+        ? `KILLED BY ${killerName.toUpperCase()}`
+        : '';
     }
 
     let remaining = seconds;
     const tick = () => {
       if (remaining > 0) {
-        let dots = '';
-        for (let i = 0; i < remaining; i++) dots += `${remaining - i}... `;
-        this._el.deathTimer.textContent = `RESPAWNING IN ${dots.trim()}`;
+        this._el.deathTimer.textContent = `RESPAWNING IN ${remaining}...`;
       }
     };
     tick();
@@ -436,30 +600,58 @@ export class Hud {
     this._dead = false;
     this._el.deathScreen.style.display = 'none';
     if (this._respawnTimer) clearInterval(this._respawnTimer);
+
+    // Remove canvas filter
+    const gc = document.getElementById('gameCanvas');
+    if (gc) {
+      gc.style.filter       = '';
+      gc.style.pointerEvents = '';
+    }
   }
 
-  // Hit marker — flashes the crosshair lines pink (hit) or white+skull (kill)
+  // Hit marker — updated for 4-arm crosshair
   showHitMarker(isKill = false) {
-    const ch = document.getElementById('crosshair');
-    if (!ch) return;
+    const arms = document.querySelectorAll('#crosshair .ch-arm');
+    if (!arms.length) return;
 
-    const col = isKill ? '#ffffff' : '#ff2d78';
+    const col = isKill ? '#ffff00' : '#ff4000';
     const dur = isKill ? 300 : 150;
 
-    // Inject a temporary override style
-    if (!this._hitStyleEl) {
-      this._hitStyleEl = document.createElement('style');
-      document.head.appendChild(this._hitStyleEl);
+    arms.forEach(arm => {
+      arm.style.background   = col;
+      arm.style.boxShadow    = `0 0 6px ${col}`;
+      arm.style.transition   = 'none';
+    });
+
+    // Spread
+    const ch = document.getElementById('crosshair');
+    if (ch) {
+      ch.style.setProperty('--ch-gap', '10px');
     }
-    this._hitStyleEl.textContent = `
-      #crosshair::before, #crosshair::after { background:${col} !important; }
-      #crosshair-dot { background:${col} !important; box-shadow:0 0 8px ${col}; }
-      #crosshair { animation:crosshair-hit ${dur}ms ease-out forwards; }
-    `;
+
+    if (isKill) {
+      // Skull flash
+      const skull = document.createElement('div');
+      skull.textContent = '☠';
+      skull.style.cssText = `
+        position:fixed; top:50%; left:50%;
+        font-size:1.8rem; color:#ffff00;
+        text-shadow:0 0 14px #ffff00;
+        pointer-events:none; z-index:300;
+        animation:skull-pop 300ms ease-out forwards;
+      `;
+      document.body.appendChild(skull);
+      setTimeout(() => skull.remove(), 300);
+    }
 
     clearTimeout(this._hitMarkerTimer);
     this._hitMarkerTimer = setTimeout(() => {
-      if (this._hitStyleEl) this._hitStyleEl.textContent = '';
+      arms.forEach(arm => {
+        arm.style.background = 'rgba(255,255,255,0.75)';
+        arm.style.boxShadow  = 'none';
+        arm.style.transition = 'background .08s, box-shadow .08s';
+      });
+      if (ch) ch.style.setProperty('--ch-gap', '4px');
     }, dur);
   }
 
@@ -490,7 +682,6 @@ export class Hud {
     ctx.fillStyle = '#010108';
     ctx.fillRect(0, 0, sz, sz);
 
-    // Grid lines
     ctx.strokeStyle = 'rgba(0,245,255,0.07)';
     ctx.lineWidth   = 0.5;
     for (let i = 0; i <= sz; i += 20) {
@@ -498,7 +689,6 @@ export class Hud {
       ctx.beginPath(); ctx.moveTo(0, i);  ctx.lineTo(sz, i);  ctx.stroke();
     }
 
-    // Remote players
     const CC = { SOLDIER: '#00f5ff', GHOST: '#ff2d78', WRAITH: '#7b2fff' };
     remotePlayers.forEach((p) => {
       if (p.dead) return;
@@ -508,7 +698,6 @@ export class Hud {
       ctx.fill();
     });
 
-    // Local player (white, glowing)
     if (localPos) {
       ctx.fillStyle = '#ffffff';
       ctx.shadowColor = '#ffffff';

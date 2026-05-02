@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NEON GRID — TOP OPERATIVES</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css" />
   <style>
     .lb-wrap {
@@ -59,7 +61,7 @@
 
     .lb-thead {
       display: grid;
-      grid-template-columns: 60px 1fr 80px 100px 80px 80px;
+      grid-template-columns: 52px 1fr 80px 130px 80px 80px;
       gap: 4px;
       padding: 10px 18px;
       border-bottom: 1px solid rgba(0,245,255,0.3);
@@ -73,12 +75,13 @@
 
     .lb-row {
       display: grid;
-      grid-template-columns: 60px 1fr 80px 100px 80px 80px;
+      grid-template-columns: 52px 1fr 80px 130px 80px 80px;
       gap: 4px;
       padding: 8px 18px;
       border-bottom: 1px solid rgba(0,245,255,0.06);
       transition: background 0.15s, border-left 0.15s;
       border-left: 3px solid transparent;
+      align-items: center;
     }
 
     .lb-row:last-child { border-bottom: none; }
@@ -151,6 +154,9 @@
       transition: opacity 0.3s;
     }
     #lb-status.visible { opacity: 1; }
+
+    /* rank badge cells don't need flex align */
+    .lb-badge-cell { display: flex; align-items: center; }
   </style>
 </head>
 <body>
@@ -170,7 +176,7 @@
         <span>RANK</span>
         <span>OPERATIVE</span>
         <span>LEVEL</span>
-        <span>XP</span>
+        <span>TIER</span>
         <span>K/D</span>
         <span>KILLS</span>
       </div>
@@ -185,7 +191,9 @@
     </div>
   </div>
 
-  <script>
+  <script type="module">
+    import { renderRankBadge } from '/js/RankBadge.js';
+
     const currentUser = localStorage.getItem('ng_username') || '';
 
     function rankClass(rank) {
@@ -214,25 +222,48 @@
           return;
         }
 
-        body.innerHTML = rows.map((r, i) => {
+        body.innerHTML = '';
+        rows.forEach((r, i) => {
           const pos       = i + 1;
           const isCurrent = r.username.toLowerCase() === currentUser.toLowerCase();
-          const tierLabel = r.rank_division > 1
+
+          const row = document.createElement('div');
+          row.className = `lb-row${isCurrent ? ' current-user' : ''}`;
+
+          // Position number
+          const posSpan = document.createElement('span');
+          posSpan.className = `lb-rank ${rankClass(pos)}`;
+          posSpan.textContent = '#' + pos;
+
+          // Username
+          const nameSpan = document.createElement('span');
+          nameSpan.className = `lb-username ${usernameClass(pos)}`;
+          nameSpan.textContent = r.username;
+
+          // Level
+          const lvlSpan = document.createElement('span');
+          lvlSpan.textContent = r.level;
+
+          // Rank badge
+          const badgeCell = document.createElement('span');
+          badgeCell.className = 'lb-badge-cell';
+          const tierName = r.rank_division > 1
             ? `${r.rank_tier} D${r.rank_division}`
             : r.rank_tier;
-          return `
-            <div class="lb-row${isCurrent ? ' current-user' : ''}">
-              <span class="lb-rank ${rankClass(pos)}">#${pos}</span>
-              <span class="lb-username ${usernameClass(pos)}">${r.username}</span>
-              <span>${r.level}</span>
-              <span style="font-size:.75rem">${tierLabel}<br><span style="color:#00f5ff">${r.rank_points} RP</span></span>
-              <span>${(r.kd_ratio || 0).toFixed(2)}</span>
-              <span>${r.kills}</span>
-            </div>
-          `;
-        }).join('');
+          badgeCell.appendChild(renderRankBadge(tierName, r.rank_points, 'sm'));
 
-        // Flash "UPDATED" indicator
+          // K/D
+          const kdSpan = document.createElement('span');
+          kdSpan.textContent = (r.kd_ratio || 0).toFixed(2);
+
+          // Kills
+          const killsSpan = document.createElement('span');
+          killsSpan.textContent = r.kills;
+
+          row.append(posSpan, nameSpan, lvlSpan, badgeCell, kdSpan, killsSpan);
+          body.appendChild(row);
+        });
+
         const status = document.getElementById('lb-status');
         status.classList.add('visible');
         setTimeout(() => status.classList.remove('visible'), 2000);

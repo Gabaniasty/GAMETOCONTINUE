@@ -305,9 +305,18 @@ class GameServer {
           isShooting: false,
           isADS:      false,
           velocity:   { x: 0, y: 0, z: 0 },
+          rankPoints: 0,
         };
 
         this.players.set(socket.id, player);
+
+        // Async rank-points lookup so the death-screen killer badge shows the real tier
+        if (userId) {
+          try {
+            const rankRow = db.getRank(userId);
+            if (rankRow && player) player.rankPoints = rankRow.rank_points || 0;
+          } catch (_) { /* guest or new account — leave rankPoints at 0 */ }
+        }
 
         // Inform joining player of the active map so their client loads correctly
         socket.emit('game:map', { mapId: this.currentMap });
@@ -414,6 +423,7 @@ class GameServer {
             killerId:    socket.id,   killerName:  shooter.username,
             victimId:    targetId,    victimName:  target.username,
             killerClass: shooter.class,
+            killerRp:    shooter.rankPoints || 0,
           });
 
           // ── Kill-streak & announcement logic ─────────────────

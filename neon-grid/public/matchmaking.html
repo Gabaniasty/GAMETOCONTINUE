@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NEON GRID — FIND MATCH</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css" />
   <style>
     /* ── Base ─────────────────────────────────────────────────── */
@@ -45,17 +47,6 @@
       text-decoration: none;
     }
     .header-right { display: flex; align-items: center; gap: 1rem; }
-    .rank-badge {
-      display: flex; align-items: center; gap: .5rem;
-      padding: .35rem .8rem;
-      border: 1px solid var(--rank-color, #cd7f32);
-      border-radius: 2px;
-      font-size: .62rem; letter-spacing: .18em;
-      color: var(--rank-color, #cd7f32);
-      text-shadow: 0 0 8px var(--rank-color, #cd7f32);
-      box-shadow: 0 0 10px color-mix(in srgb, var(--rank-color, #cd7f32) 25%, transparent);
-    }
-    .rank-badge-rp { color: rgba(224,224,255,.55); font-size: .55rem; }
 
     /* ── Page layout ─────────────────────────────────────────── */
     .mm-page {
@@ -224,7 +215,6 @@
       width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
     }
     .lp-name { font-size: .7rem; letter-spacing: .1em; flex: 1; }
-    .lp-rank-label { font-size: .52rem; letter-spacing: .1em; }
 
     /* ── Countdown ────────────────────────────────────────────── */
     .countdown-wrap {
@@ -261,10 +251,7 @@
 <header class="mm-header">
   <a class="header-logo" href="/index.html">NG</a>
   <div class="header-right">
-    <div class="rank-badge" id="rank-badge" style="display:none">
-      <span id="rank-tier-label">BRONZE III</span>
-      <span class="rank-badge-rp" id="rank-rp-label">0 RP</span>
-    </div>
+    <div id="rank-badge-wrap" style="display:none"></div>
     <span id="username-label"
       style="font-size:.65rem;letter-spacing:.18em;color:#7b2fff;text-shadow:0 0 8px #7b2fff;display:none"></span>
     <a href="/leaderboard.html" class="btn btn-accent" style="font-size:.6rem;padding:.4rem 1rem;">LEADERBOARD</a>
@@ -366,8 +353,9 @@
 <!-- ── Scripts ────────────────────────────────────────────────── -->
 <script src="/socket.io/socket.io.js"></script>
 <script type="module">
-import { Auth }  from '/js/Auth.js';
-import { Lobby } from '/js/Lobby.js';
+import { Auth }            from '/js/Auth.js';
+import { Lobby }           from '/js/Lobby.js';
+import { renderRankBadge } from '/js/RankBadge.js';
 
 // ── Rank helpers (mirrors RankSystem.js) ─────────────────────
 const RANK_TABLE = [
@@ -401,10 +389,10 @@ const CLASS_COLORS = { SOLDIER: '#00f5ff', GHOST: '#ff2d78', WRAITH: '#7b2fff' }
 const auth      = new Auth();
 let   playerData = { userId: null, username: 'Guest', rankPoints: 0, playerClass: 'SOLDIER' };
 
-const logoutBtn    = document.getElementById('logout-btn');
-const usernameLabel = document.getElementById('username-label');
-const rankBadge    = document.getElementById('rank-badge');
-const findBtn      = document.getElementById('find-btn');
+const logoutBtn      = document.getElementById('logout-btn');
+const usernameLabel  = document.getElementById('username-label');
+const rankBadgeWrap  = document.getElementById('rank-badge-wrap');
+const findBtn        = document.getElementById('find-btn');
 
 async function loadPlayerData() {
   const token = auth.getToken();
@@ -424,10 +412,9 @@ async function loadPlayerData() {
 
     if (rank) {
       const ri = getRankInfo(rank.rank_points);
-      rankBadge.style.setProperty('--rank-color', ri.color);
-      document.getElementById('rank-tier-label').textContent = ri.tier;
-      document.getElementById('rank-rp-label').textContent   = rank.rank_points + ' RP';
-      rankBadge.style.display = '';
+      rankBadgeWrap.innerHTML = '';
+      rankBadgeWrap.appendChild(renderRankBadge(ri.tier, rank.rank_points, 'sm'));
+      rankBadgeWrap.style.display = '';
     }
 
     if (stats) {
@@ -531,23 +518,50 @@ lobby.onMatchLobby = ({ matchId, map, players }) => {
     const ri    = getRankInfo(p.rankPoints);
     const color = CLASS_COLORS[p.playerClass] || '#e0e0ff';
     const isMe  = p.username === playerData.username;
-    return `
-      <div class="lobby-player">
-        <div class="lp-class-dot" style="background:${color};box-shadow:0 0 6px ${color}"></div>
-        <span class="lp-name">${p.username}${isMe ? ' <span style="color:#ffd700;font-size:.5rem">YOU</span>' : ''}</span>
-        <span class="lp-rank-label" style="color:${ri.color}">${ri.tier}</span>
-      </div>`;
+
+    const row = document.createElement('div');
+    row.className = 'lobby-player';
+
+    const dot = document.createElement('div');
+    dot.className = 'lp-class-dot';
+    dot.style.cssText = `background:${color};box-shadow:0 0 6px ${color}`;
+
+    const name = document.createElement('span');
+    name.className = 'lp-name';
+    name.innerHTML = p.username + (isMe ? ' <span style="color:#ffd700;font-size:.5rem">YOU</span>' : '');
+
+    const badge = renderRankBadge(ri.tier, null, 'sm');
+
+    row.append(dot, name, badge);
+    return row.outerHTML;
+  }
+
+  // Build teams HTML using DOM then convert to strings for simplicity
+  function buildTeamHTML(players) {
+    return players.map(p => {
+      const ri    = getRankInfo(p.rankPoints);
+      const color = CLASS_COLORS[p.playerClass] || '#e0e0ff';
+      const isMe  = p.username === playerData.username;
+      const badge = renderRankBadge(ri.tier, null, 'sm');
+      const badgeHtml = badge.outerHTML;
+      return `
+        <div class="lobby-player">
+          <div class="lp-class-dot" style="background:${color};box-shadow:0 0 6px ${color}"></div>
+          <span class="lp-name">${p.username}${isMe ? ' <span style="color:#ffd700;font-size:.5rem">YOU</span>' : ''}</span>
+          ${badgeHtml}
+        </div>`;
+    }).join('');
   }
 
   const teamsHTML = `
     <div class="team-col">
       <div class="team-label a">TEAM A</div>
-      ${teamA.map(playerRow).join('')}
+      ${buildTeamHTML(teamA)}
     </div>
     <div class="vs-divider">VS</div>
     <div class="team-col">
       <div class="team-label b">TEAM B</div>
-      ${teamB.map(playerRow).join('')}
+      ${buildTeamHTML(teamB)}
     </div>
   `;
   document.getElementById('ov-teams').innerHTML    = teamsHTML;
@@ -561,13 +575,12 @@ lobby.onCountdown = ({ seconds }) => {
   showOnly(ovCountdown);
   const el = document.getElementById('ov-cd-num');
   el.textContent = seconds;
-  // Restart animation by toggling classes
   el.classList.remove('replay');
-  void el.offsetWidth; // force reflow
+  void el.offsetWidth;
   el.classList.add('replay');
 };
 
-// match:start → store data and go to class select / game
+// match:start → store data and go to game
 lobby.onMatchStart = ({ matchId, map, players }) => {
   const myEntry = players?.find(p => p.username === playerData.username);
   sessionStorage.setItem('ng_match', JSON.stringify({
@@ -575,7 +588,6 @@ lobby.onMatchStart = ({ matchId, map, players }) => {
     team:        myEntry?.team  || 'A',
     playerClass: myEntry?.playerClass || selectedClass,
   }));
-  // Use the class from the match if provided, otherwise keep selected
   if (myEntry?.playerClass) localStorage.setItem('ng_class', myEntry.playerClass);
   window.location.href = '/game.html';
 };
@@ -599,7 +611,6 @@ document.getElementById('cancel-btn').addEventListener('click', () => {
   findBtn.disabled = false;
 });
 
-// On disconnect clean up
 socket.on('disconnect', () => {
   showOnly(null);
   findBtn.disabled = false;

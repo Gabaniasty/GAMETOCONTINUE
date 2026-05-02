@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NEON GRID — Choose Class</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css" />
   <style>
     html, body {
@@ -253,7 +255,7 @@
     <p class="selected-label" id="selected-label">Select a class to continue</p>
 
     <div class="actions">
-      <button class="back-btn" onclick="window.location.href='/index.html'">◀ BACK</button>
+      <button class="back-btn" id="back-btn">◀ BACK</button>
       <button class="confirm-btn" id="confirm-btn" disabled>CONFIRM CLASS</button>
     </div>
   </div>
@@ -267,6 +269,11 @@
     const MAX_RATE   = Math.max(...Object.values(CLASSES).map(c => 1000 / c.fireRate));
 
     let selected = localStorage.getItem('ng_class') || null;
+
+    function navigate(url) {
+      document.body.classList.add('page-exit');
+      setTimeout(() => { window.location.href = url; }, 280);
+    }
 
     function pct(val, max) { return Math.round(val / max * 100); }
 
@@ -330,7 +337,11 @@
     document.getElementById('confirm-btn').addEventListener('click', () => {
       if (!selected) return;
       localStorage.setItem('ng_class', selected);
-      window.location.href = '/game.html';
+      navigate('/game.html');
+    });
+
+    document.getElementById('back-btn').addEventListener('click', () => {
+      navigate('/index.html');
     });
   </script>
 </body>
