@@ -315,8 +315,9 @@ export class Game {
     this._loadingIds.add(player.id);
 
     const ctrl = new CharacterController(this.scene);
+    const classColor = CLASS_COLORS[player.class] || 0x00f5ff;
     try {
-      await ctrl.load('/assets/characters/soldier.glb');
+      await ctrl.load('/assets/characters/soldier.glb', classColor);
     } catch (err) {
       console.warn('[Game] Failed to load soldier.glb:', err);
       this._loadingIds.delete(player.id);

@@ -11,7 +11,7 @@ export class CharacterController {
     this._pendingAnim = null;
   }
 
-  async load(modelPath) {
+  async load(modelPath, emissiveColor) {
     return new Promise((resolve, reject) => {
       const loader = new THREE.GLTFLoader();
       loader.load(
@@ -20,6 +20,9 @@ export class CharacterController {
           this._model = gltf.scene;
           this._model.scale.setScalar(0.011);
 
+          const color = emissiveColor !== undefined ? emissiveColor : 0x001133;
+          const intensity = emissiveColor !== undefined ? 0.45 : 0.2;
+
           this._model.traverse((child) => {
             if (child.isMesh) {
               child.castShadow    = true;
@@ -27,8 +30,8 @@ export class CharacterController {
               const mats = Array.isArray(child.material) ? child.material : [child.material];
               mats.forEach((m) => {
                 if (!m) return;
-                m.emissive          = new THREE.Color(0x001133);
-                m.emissiveIntensity = 0.2;
+                m.emissive          = new THREE.Color(color);
+                m.emissiveIntensity = intensity;
               });
             }
           });
