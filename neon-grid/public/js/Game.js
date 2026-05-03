@@ -354,9 +354,9 @@ export class Game {
       }
 
       // ── Procedural animation ─────────────────────────────────────
-      const vel        = p.velocity || { x: 0, y: 0, z: 0 };
-      const hspd       = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
-      const isSprinting = hspd > 6.8;
+      const vel         = p.velocity || { x: 0, y: 0, z: 0 };
+      const hspd        = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+      const isSprinting = !!p.isSprinting || hspd > 6.5;
       if (group.neon_animate) {
         group.neon_animate(dt, vel, !!p.isShooting, isSprinting);
       }

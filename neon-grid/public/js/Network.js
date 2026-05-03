@@ -134,14 +134,15 @@ export class Network {
       const { x, y, z } = this._cameraRef.position;
       const rotY = this._cameraRef.rotation.y;
 
-      let vx = 0, vy = 0, vz = 0, isADS = false;
+      let vx = 0, vy = 0, vz = 0, isADS = false, isSprinting = false;
       if (this._controlsRef) {
         const v = this._controlsRef._vel;
         vx = v.x; vy = v.y; vz = v.z;
-        isADS = !!this._controlsRef.isScoped;
+        isADS       = !!this._controlsRef.isScoped;
+        isSprinting = !!this._controlsRef.isSprinting();
       }
 
-      this._socket.emit('player:move', { x, y, z, rotY, vx, vy, vz, isADS });
+      this._socket.emit('player:move', { x, y, z, rotY, vx, vy, vz, isADS, isSprinting });
     }, 33);
   }
 

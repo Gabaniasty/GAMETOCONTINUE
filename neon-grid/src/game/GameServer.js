@@ -354,16 +354,17 @@ class GameServer {
 
     // ── Per-socket event handlers ─────────────────────────────────────
 
-    socket.on('player:move', ({ x, y, z, rotY, vx, vy, vz, isADS }) => {
+    socket.on('player:move', ({ x, y, z, rotY, vx, vy, vz, isADS, isSprinting }) => {
       const p = this.players.get(socket.id);
       if (!p || p.dead) return;
       const B = this._bounds;
-      p.x        = clamp(x, -B, B);
-      p.y        = y;
-      p.z        = clamp(z, -B, B);
-      p.rotY     = rotY;
-      p.velocity = { x: vx || 0, y: vy || 0, z: vz || 0 };
-      p.isADS    = !!isADS;
+      p.x           = clamp(x, -B, B);
+      p.y           = y;
+      p.z           = clamp(z, -B, B);
+      p.rotY        = rotY;
+      p.velocity    = { x: vx || 0, y: vy || 0, z: vz || 0 };
+      p.isADS       = !!isADS;
+      p.isSprinting = !!isSprinting;
     });
 
     socket.on('game:map_request', ({ mapId }) => {
