@@ -96,8 +96,8 @@ export class Game {
     } else {
       this._gunGroup = buildWeapon(this._localClass);
       this._GUN_BASE = { x: 0.2, y: -0.22, z: -0.35, rx: 0.03, rz: -0.04 };
-      // Sprint holster target — lowered to the right side (COD style)
-      this._SPRINT_POS = { x: 0.42, y: -0.36, z: -0.28, rx: 0.14, rz: -0.52 };
+      // Sprint holster — aggressively lowered and tilted (COD-style)
+      this._SPRINT_POS = { x: 0.55, y: -0.52, z: -0.20, rx: 0.28, rz: -0.78 };
       this._gunGroup.position.set(0.2, -0.22, -0.35);
       this._gunGroup.rotation.set(0.03, 0, -0.04);
       this.weaponScene.add(this._gunGroup);
@@ -197,8 +197,17 @@ export class Game {
   tickWeapon(dt) {
     const sprinting = this.controls &&
                       this.controls.isSprinting() &&
+                      this.controls.isPlaying &&
                       !this.controls.isDead &&
-                      this.controls.isPlaying;
+                      (this.controls._vel
+                        ? (Math.abs(this.controls._vel.x) + Math.abs(this.controls._vel.z)) > 0.5
+                        : false);
+
+    // Sprint FOV kick (+8 degrees) — only when not scoped
+    if (!this._isScoped) {
+      const baseFov = parseFloat(localStorage.getItem('ng_fov') || '75');
+      this._scopeFovTarget = sprinting ? baseFov + 8 : baseFov;
+    }
 
     if (this._awpWeapon) {
       this._awpWeapon.update(dt);

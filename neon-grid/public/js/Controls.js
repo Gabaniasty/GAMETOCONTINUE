@@ -4,10 +4,10 @@ import { ARENA_AABBS, LADDER_ZONES, CATWALK_EYE_Y, GROUND_EYE_Y } from './MapLoa
 // ── Movement constants ────────────────────────────────────────────────────
 const EYE_Y        = 1.65;
 const CROUCH_Y     = 1.1;
-const WALK_SPEED   = 5.5;
-const SPRINT_SPEED = 8.2;
-const CROUCH_SPEED = 2.8;
-const AIR_SPEED    = 3.5;
+const WALK_SPEED   = 7.5;
+const SPRINT_SPEED = 13.0;
+const CROUCH_SPEED = 3.2;
+const AIR_SPEED    = 4.5;
 const GRAVITY      = -22.0;
 const JUMP_FORCE   = 7.2;
 const GROUND_ACCEL = 55.0;
@@ -208,7 +208,7 @@ export class Controls {
     const wishZ = -ix * sin + iz * cos;
 
     const onGround   = this._onGround;
-    const sprinting  = this.isSprinting() && onGround && !this._crouching && iz < -0.1;
+    const sprinting  = this.isSprinting() && onGround && !this._crouching && hasInput;
     const targetSpeed = this._crouching ? CROUCH_SPEED : sprinting ? SPRINT_SPEED : WALK_SPEED;
 
     if (onGround) {

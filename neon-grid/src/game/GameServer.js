@@ -28,9 +28,9 @@ const MAX_PLAYERS   = 10;
 const ROUND_DURATION = 5 * 60 * 1000; // 5 minutes
 
 const CLASSES = {
-  SOLDIER: { hp: 100, speed: 5.5, damage: 28, fireRate:   97 },
-  GHOST:   { hp:  75, speed: 8.5, damage: 16, fireRate:   67 },
-  WRAITH:  { hp: 125, speed: 3.5, damage: 95, fireRate: 1333 },
+  SOLDIER: { hp: 100, speed: 7.5,  damage: 28, fireRate:   97 },
+  GHOST:   { hp:  75, speed: 10.0, damage: 16, fireRate:   67 },
+  WRAITH:  { hp: 125, speed: 5.5,  damage: 95, fireRate: 1333 },
 };
 
 // TERMINAL map collision AABBs — mirrors TERMINAL_AABBS in public/js/maps/TerminalMap.js
