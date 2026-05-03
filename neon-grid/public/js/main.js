@@ -414,6 +414,17 @@ network.onLobbyState = ({ gameState, hostId, players, maxPlayers }) => {
 
 _lobbyStartBtn.addEventListener('click', () => network.sendStartRound());
 
+// ── Round countdown ────────────────────────────────────────────────
+network.onCountdown = (seconds) => {
+  if (seconds > 0) {
+    _lobbyStateLabel.textContent = `STARTING IN ${seconds}…`;
+    _lobbyCountdown.textContent  = '';
+    _lobbyStartBtn.style.display = 'none';
+    _lobbyHint.textContent       = 'ROUND STARTING — GET READY!';
+    _lobbyHint.style.display     = 'block';
+  }
+};
+
 // ── Patched game loop ──────────────────────────────────────────────
 game._animate = function () {
   requestAnimationFrame(() => game._animate());

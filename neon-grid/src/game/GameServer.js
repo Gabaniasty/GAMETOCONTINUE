@@ -223,6 +223,10 @@ class GameServer {
     this._firstBloodFired = false;
     this._killStreaks      = new Map();  // socketId → consecutive kill count
 
+    // ── Countdown / auto-start ────────────────────────────────────
+    this._countdownActive = false;
+    this._autoStartTimer  = null;
+
     // ── Matchmaker ───────────────────────────────────────────────
     this.matchmaker = new Matchmaker(io);
   }
@@ -338,9 +342,16 @@ class GameServer {
 
         this._broadcastLobbyState();
 
-        // Auto-start when session is full
-        if (this.players.size >= MAX_PLAYERS && this.gameState === 'lobby') {
-          this._startRound();
+        // Auto-start: when 2+ players are in lobby, start a countdown timer
+        // (host can also click START to skip the wait)
+        if (this.players.size >= 2 && this.gameState === 'lobby' &&
+            !this._countdownActive && !this._autoStartTimer) {
+          this._autoStartTimer = setTimeout(() => {
+            this._autoStartTimer = null;
+            if (this.gameState === 'lobby' && this.players.size >= 2 && !this._countdownActive) {
+              this._startCountdown();
+            }
+          }, 30000);
         }
       });
 
@@ -543,7 +554,10 @@ class GameServer {
       socket.on('game:start', () => {
         if (socket.id !== this.hostId) return;
         if (this.gameState !== 'lobby') return;
-        this._startRound();
+        if (this._countdownActive) return;
+        // Cancel any pending auto-start and kick off the countdown immediately
+        if (this._autoStartTimer) { clearTimeout(this._autoStartTimer); this._autoStartTimer = null; }
+        this._startCountdown();
       });
 
       socket.on('disconnect', () => {
@@ -559,9 +573,16 @@ class GameServer {
           this.hostId = next.done ? null : next.value;
         }
 
+        // Cancel auto-start if fewer than 2 players remain
+        if (this.players.size < 2 && this._autoStartTimer) {
+          clearTimeout(this._autoStartTimer);
+          this._autoStartTimer = null;
+        }
+
         // Reset state if everyone left
         if (this.players.size === 0) {
           this.gameState = 'lobby';
+          this._countdownActive = false;
           if (this._roundTimer) { clearTimeout(this._roundTimer); this._roundTimer = null; }
         }
 
@@ -575,6 +596,25 @@ class GameServer {
     }, 50);
 
     console.log('GameServer started (20 tick/s)');
+  }
+
+  // ── Countdown before round start ─────────────────────────────────
+  _startCountdown() {
+    if (this._countdownActive) return;
+    this._countdownActive = true;
+    let count = 5;
+    this.io.emit('game:countdown', { seconds: count });
+    this._broadcastLobbyState();
+
+    const tick = setInterval(() => {
+      count--;
+      this.io.emit('game:countdown', { seconds: count });
+      if (count <= 0) {
+        clearInterval(tick);
+        this._countdownActive = false;
+        this._startRound();
+      }
+    }, 1000);
   }
 
   // ── Round lifecycle ──────────────────────────────────────────────
