@@ -5,6 +5,8 @@ import { BulletSystem } from './BulletSystem.js';
 import { SoundEngine }  from './SoundEngine.js';
 import { CLASSES }      from './Classes.js';
 import { OverwatchMap, OVERWATCH_AABBS } from './maps/OverwatchMap.js';
+import { PostMatch }    from './PostMatch.js';
+import { Scoreboard }   from './Scoreboard.js';
 
 // ── Map selection via URL param (?map=OVERWATCH | TERMINAL) ─────────────────
 const _selectedMap = (new URLSearchParams(location.search).get('map') || 'TERMINAL').toUpperCase();
@@ -19,6 +21,9 @@ const network = new Network();
 const hud     = new Hud();
 const bullets = new BulletSystem(game.scene);
 const sound   = new SoundEngine();
+
+const postMatch  = new PostMatch(network._socket, () => network.getLocalId());
+const scoreboard = new Scoreboard(network._socket, () => network.getLocalId());
 
 // Resume / init audio context on any user gesture
 function _initAudio() { sound.init(); }
@@ -241,16 +246,15 @@ network.onXpUpdate = ({ xp, level }) => {
   hud.setXp(xp, level);
 };
 
-// ── Tab: scoreboard (other players only, sorted by kills) ──────────
+// ── Tab: server-polled scoreboard ─────────────────────────────────
 document.addEventListener('keydown', (e) => {
   if (e.code === 'Tab') {
     e.preventDefault();
-    const sorted = [...network.getRemotePlayers()].sort((a, b) => (b.kills || 0) - (a.kills || 0));
-    hud.showScoreboard(sorted);
+    scoreboard.show();
   }
 });
 document.addEventListener('keyup', (e) => {
-  if (e.code === 'Tab') hud.hideScoreboard();
+  if (e.code === 'Tab') scoreboard.hide();
 });
 
 // ── Scope wiring (WRAITH only) ─────────────────────────────────────

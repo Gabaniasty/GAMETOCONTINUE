@@ -137,7 +137,7 @@ const stmts = {
     WHERE user_id = @userId
   `),
 
-  // Leaderboard
+  // Leaderboard (basic)
   leaderboard: db.prepare(`
     SELECT u.id, u.username,
            r.rank_tier, r.rank_division, r.rank_points,
@@ -150,6 +150,38 @@ const stmts = {
     JOIN users        u ON r.user_id = u.id
     ORDER BY r.rank_points DESC
     LIMIT ?
+  `),
+
+  // Leaderboard (full — includes HS rate and win rate)
+  leaderboardFull: db.prepare(`
+    SELECT u.id, u.username,
+           r.rank_tier, r.rank_division, r.rank_points,
+           s.kills, s.deaths, s.headshots, s.damage_dealt,
+           s.matches_played, s.matches_won,
+           s.xp, s.level,
+           ROUND(CAST(s.kills AS REAL) / MAX(s.deaths, 1), 2) AS kd_ratio,
+           CASE WHEN s.matches_played > 0
+                THEN ROUND(CAST(s.matches_won AS REAL) / s.matches_played * 100.0, 1)
+                ELSE 0.0 END AS win_rate,
+           CASE WHEN s.kills > 0
+                THEN ROUND(CAST(s.headshots AS REAL) / s.kills * 100.0, 1)
+                ELSE 0.0 END AS hs_rate
+    FROM player_rank r
+    JOIN player_stats s ON r.user_id = s.user_id
+    JOIN users        u ON r.user_id = u.id
+    ORDER BY r.rank_points DESC
+    LIMIT ?
+  `),
+
+  // Rank history for a user (last N rp_change entries from match_players)
+  rankHistory: db.prepare(`
+    SELECT mp.rp_change, m.started_at, m.map_name, m.game_mode,
+           mp.kills, mp.deaths, mp.placement
+    FROM match_players mp
+    JOIN matches m ON mp.match_id = m.id
+    WHERE mp.user_id = ?
+    ORDER BY m.started_at DESC
+    LIMIT 10
   `),
 
   // Matches
@@ -262,11 +294,44 @@ function updateRankPoints(userId, rpChange, won) {
 }
 
 /**
- * Top players by rank points.
+ * Top players by rank points (basic).
  * @param {number} limit
  */
 function getLeaderboard(limit = 50) {
   return stmts.leaderboard.all(limit);
+}
+
+/**
+ * Top players by rank points — full data including HS rate and win rate.
+ * @param {number} limit
+ */
+function getLeaderboardFull(limit = 100) {
+  return stmts.leaderboardFull.all(Math.min(limit, 100));
+}
+
+/**
+ * Full profile for a user by username.
+ * @param {string} username
+ */
+function getProfileByUsername(username) {
+  const user = stmts.getUserByUsername.get(username);
+  if (!user) return null;
+  const stats        = stmts.getStats.get(user.id) || null;
+  const rank         = stmts.getRank.get(user.id) || null;
+  const recentMatches = stmts.matchHistory.all(user.id, 10);
+  const rankHistory  = stmts.rankHistory.all(user.id);
+  return {
+    user: {
+      id: user.id,
+      username: user.username,
+      created_at: user.created_at,
+      last_seen:  user.last_seen,
+    },
+    stats,
+    rank,
+    recentMatches,
+    rankHistory,
+  };
 }
 
 function createMatch(mapName, gameMode = 'DEATHMATCH') {
@@ -314,6 +379,8 @@ module.exports = {
   updateStatsAfterMatch,
   updateRankPoints,
   getLeaderboard,
+  getLeaderboardFull,
+  getProfileByUsername,
   createMatch,
   addMatchPlayer,
   finalizeMatch,

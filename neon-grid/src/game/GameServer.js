@@ -306,6 +306,10 @@ class GameServer {
           isADS:      false,
           velocity:   { x: 0, y: 0, z: 0 },
           rankPoints: 0,
+          // per-round session stats
+          damage:     0,
+          headshots:  0,
+          bestStreak: 0,
         };
 
         this.players.set(socket.id, player);
@@ -417,6 +421,9 @@ class GameServer {
         }
         target.hp = Math.max(0, target.hp - damage);
 
+        // Track damage dealt by shooter
+        shooter.damage = (shooter.damage || 0) + damage;
+
         socket.emit('shot:confirmed', { targetId, damage, newHp: target.hp, isHeadshot: isHead });
 
         const targetSocket = this.io.sockets.sockets.get(targetId);
@@ -431,6 +438,9 @@ class GameServer {
           target.dead = true;
           target.deaths++;
           shooter.kills++;
+
+          // Track headshot kills
+          if (isHead) shooter.headshots = (shooter.headshots || 0) + 1;
 
           const weaponName = (weaponClass || shooter.class) === 'WRAITH' ? 'AWP'
             : (weaponClass || shooter.class) === 'GHOST' ? 'SMG' : 'AK47';
@@ -447,6 +457,8 @@ class GameServer {
           // ── Kill-streak & announcement logic ─────────────────
           const streak = (this._killStreaks.get(socket.id) || 0) + 1;
           this._killStreaks.set(socket.id, streak);
+          // Track personal best streak
+          shooter.bestStreak = Math.max(shooter.bestStreak || 0, streak);
           // Reset victim's streak
           this._killStreaks.set(targetId, 0);
 
@@ -480,6 +492,41 @@ class GameServer {
             }, 2500);
           }, 3000);
         }
+      });
+
+      // ── Live scoreboard (Tab key) ─────────────────────────────────
+      socket.on('scoreboard:request', () => {
+        const players = Array.from(this.players.values())
+          .map(p => ({
+            id:       p.id,
+            username: p.username,
+            class:    p.class,
+            team:     p.team || 'A',
+            kills:    p.kills    || 0,
+            deaths:   p.deaths   || 0,
+            damage:   p.damage   || 0,
+            score:    (p.kills || 0) * 100,
+            dead:     p.dead,
+            hp:       p.hp,
+          }))
+          .sort((a, b) => b.score - a.score);
+
+        const teamA = players.filter(p => p.team === 'A');
+        const teamB = players.filter(p => p.team === 'B');
+        const totalKills = players.reduce((s, p) => s + p.kills, 0);
+
+        socket.emit('scoreboard:data', {
+          players,
+          totalKills,
+          teamA: {
+            kills:  teamA.reduce((s, p) => s + p.kills,  0),
+            damage: teamA.reduce((s, p) => s + p.damage, 0),
+          },
+          teamB: {
+            kills:  teamB.reduce((s, p) => s + p.kills,  0),
+            damage: teamB.reduce((s, p) => s + p.damage, 0),
+          },
+        });
       });
 
       // ── Matchmaking queue ────────────────────────────────────────
@@ -553,7 +600,11 @@ class GameServer {
     for (const [, p] of this.players) {
       const sp = this._getFarthestSpawn();
       const hp = (CLASSES[p.class] || CLASSES.SOLDIER).hp;
-      Object.assign(p, { x: sp.x, y: sp.y, z: sp.z, hp, dead: false, kills: 0, deaths: 0, spawnProtection: true });
+      Object.assign(p, {
+        x: sp.x, y: sp.y, z: sp.z, hp, dead: false,
+        kills: 0, deaths: 0, damage: 0, headshots: 0, bestStreak: 0,
+        spawnProtection: true,
+      });
       const id = p.id;
       setTimeout(() => {
         if (this.players.has(id)) this.players.get(id).spawnProtection = false;
@@ -607,9 +658,18 @@ class GameServer {
           rpMap[p.userId] = r ? r.rank_points : 0;
         }
 
+        // Save old tier for rank-up detection (before rank update)
+        const oldRankMap = {};
+        for (const p of authPlayers) {
+          const r = db.getRank(p.userId);
+          oldRankMap[p.userId] = r ? { tier: r.rank_tier, div: r.rank_division } : { tier: 'BRONZE', div: 4 };
+        }
+
         const avgRP = authPlayers.length > 0
           ? authPlayers.reduce((s, p) => s + rpMap[p.userId], 0) / authPlayers.length
           : 0;
+
+        const rpChanges = {};
 
         for (const p of authPlayers) {
           const won = (winner && p.id === winner.id);
@@ -626,19 +686,29 @@ class GameServer {
             rpMap[p.userId], opponentAvgRP, won,
             p.kills, p.deaths, 0,
           );
+          rpChanges[p.id] = rpChange;
 
           db.updateStatsAfterMatch(p.userId, {
-            kills: p.kills, deaths: p.deaths,
-            assists: 0, headshots: 0,
-            shotsFired: 0, shotsHit: 0, damage: 0,
-            won, playtimeSeconds: duration,
+            kills:       p.kills,
+            deaths:      p.deaths,
+            assists:     0,
+            headshots:   p.headshots  || 0,
+            shotsFired:  0,
+            shotsHit:    0,
+            damage:      p.damage     || 0,
+            won,
+            playtimeSeconds: duration,
           });
           db.updateRankPoints(p.userId, rpChange, won);
           db.updateMatchPlayer(matchId, p.userId, {
-            kills: p.kills, deaths: p.deaths,
-            assists: 0, headshots: 0, damage: 0,
-            score: p.kills * 100,
-            placement, rpChange,
+            kills:     p.kills,
+            deaths:    p.deaths,
+            assists:   0,
+            headshots: p.headshots || 0,
+            damage:    p.damage    || 0,
+            score:     p.kills * 100,
+            placement,
+            rpChange,
           });
 
           // Push updated stats to the player's socket
@@ -648,6 +718,66 @@ class GameServer {
             const newRank  = db.getRank(p.userId);
             sock.emit('player:stats_update', { stats: newStats, rank: newRank, rpChange });
           }
+        }
+
+        // ── Build match:ended payload and emit per-socket ─────────
+        const TIER_COLORS = {
+          BRONZE: '#cd7f32', SILVER: '#c0c0c0', GOLD: '#ffd700',
+          PLATINUM: '#00f5ff', DIAMOND: '#b9f2ff', MASTER: '#ff2d78', GRANDMASTER: '#7b2fff',
+        };
+
+        const allPlayers = Array.from(this.players.values())
+          .map(p => ({
+            id:        p.id,
+            username:  p.username,
+            class:     p.class,
+            kills:     p.kills     || 0,
+            deaths:    p.deaths    || 0,
+            headshots: p.headshots || 0,
+            damage:    p.damage    || 0,
+            score:     (p.kills || 0) * 100,
+            rpChange:  rpChanges[p.id] || 0,
+            won:       winner ? p.id === winner.id : false,
+          }))
+          .sort((a, b) => b.score - a.score);
+
+        for (const p of this.players.values()) {
+          const sock = this.io.sockets.sockets.get(p.id);
+          if (!sock) continue;
+
+          let rankChanged = false;
+          let oldTier = null, oldDiv = null;
+          let newTier = null, newDiv = null, newColor = null;
+
+          if (p.userId) {
+            const old = oldRankMap[p.userId] || {};
+            const newR = db.getRank(p.userId);
+            if (newR) {
+              oldTier = old.tier;  oldDiv = old.div;
+              newTier = newR.rank_tier; newDiv = newR.rank_division;
+              rankChanged = oldTier !== newTier || oldDiv !== newDiv;
+              newColor = TIER_COLORS[newTier] || null;
+            }
+          }
+
+          const hsAcc = p.kills > 0
+            ? Math.round((p.headshots || 0) / p.kills * 100) : 0;
+
+          sock.emit('match:ended', {
+            mapName:     this.currentMap,
+            duration,
+            mode:        'DEATHMATCH',
+            players:     allPlayers,
+            rankChanged,
+            oldTier,     oldDiv,
+            newTier,     newDiv,     newColor,
+            myStats: {
+              accuracy:    hsAcc,
+              bestStreak:  p.bestStreak || 0,
+              damage:      p.damage     || 0,
+              kd:          parseFloat((p.kills / Math.max(p.deaths, 1)).toFixed(2)),
+            },
+          });
         }
       } catch (e) {
         console.error('[DB] _endRound commit failed:', e.message);
@@ -682,6 +812,12 @@ class GameServer {
       })),
     };
     this.io.emit('game:lobby_state', data);
+  }
+
+  isHost(username) {
+    if (!this.hostId || !username) return false;
+    const hostPlayer = this.players.get(this.hostId);
+    return hostPlayer && hostPlayer.username === username;
   }
 
   _getPlayersArray() { return Array.from(this.players.values()); }

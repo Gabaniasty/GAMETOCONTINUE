@@ -10,13 +10,11 @@
   <style>
     .lb-wrap {
       min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+      display: flex; flex-direction: column;
       align-items: center;
       padding: 3rem 1.5rem 4rem;
       position: relative;
     }
-
     .lb-bg {
       position: fixed; inset: 0;
       background-image:
@@ -26,93 +24,59 @@
       mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 30%, transparent 100%);
       pointer-events: none;
     }
-
     .lb-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      width: 100%;
-      max-width: 800px;
-      margin-bottom: 2.5rem;
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%; max-width: 900px; margin-bottom: 2.5rem;
     }
-
     .lb-title {
-      font-size: clamp(1rem, 3vw, 1.6rem);
-      font-weight: 900;
-      letter-spacing: 0.2em;
-      color: #00f5ff;
+      font-size: clamp(1rem,3vw,1.6rem); font-weight: 900;
+      letter-spacing: .2em; color: #00f5ff;
       text-shadow: 0 0 12px #00f5ff, 0 0 24px rgba(0,245,255,0.4);
     }
-
     .lb-subtitle {
-      font-size: 0.55rem;
-      letter-spacing: 0.3em;
-      color: rgba(224,224,255,0.35);
-      margin-top: 4px;
+      font-size: .55rem; letter-spacing: .3em;
+      color: rgba(224,224,255,.35); margin-top: 4px;
     }
 
     .lb-table-wrap {
-      width: 100%;
-      max-width: 800px;
-      background: rgba(10,10,20,0.88);
-      border: 1px solid rgba(0,245,255,0.15);
+      width: 100%; max-width: 900px;
+      background: rgba(10,10,20,.88);
+      border: 1px solid rgba(0,245,255,.15);
       backdrop-filter: blur(10px);
     }
 
-    .lb-thead {
-      display: grid;
-      grid-template-columns: 52px 1fr 80px 130px 80px 80px;
-      gap: 4px;
-      padding: 10px 18px;
-      border-bottom: 1px solid rgba(0,245,255,0.3);
-    }
+    /* 8 columns: rank | operative | level | tier | K/D | kills | HS% | WIN% */
+    .lb-grid { grid-template-columns: 48px 1fr 64px 160px 68px 64px 68px 68px; }
 
+    .lb-thead {
+      display: grid; gap: 4px; padding: 10px 18px;
+      border-bottom: 1px solid rgba(0,245,255,.3);
+    }
     .lb-thead span {
-      font-size: 0.5rem;
-      letter-spacing: 0.22em;
-      color: #00f5ff;
+      font-size: .48rem; letter-spacing: .22em; color: #00f5ff;
     }
 
     .lb-row {
-      display: grid;
-      grid-template-columns: 52px 1fr 80px 130px 80px 80px;
-      gap: 4px;
-      padding: 8px 18px;
-      border-bottom: 1px solid rgba(0,245,255,0.06);
-      transition: background 0.15s, border-left 0.15s;
+      display: grid; gap: 4px; padding: 8px 18px;
+      border-bottom: 1px solid rgba(0,245,255,.06);
+      transition: background .15s, border-left .15s;
       border-left: 3px solid transparent;
-      align-items: center;
+      align-items: center; cursor: pointer;
+      position: relative;
     }
-
-    .lb-row:last-child { border-bottom: none; }
-
-    .lb-row:nth-child(odd)  { background: rgba(10,10,18,0.6); }
-    .lb-row:nth-child(even) { background: rgba(13,13,26,0.6); }
-
-    .lb-row:hover {
-      background: rgba(26,0,51,0.7);
-      border-left-color: #ff2d78;
-    }
-
-    .lb-row.current-user {
-      border-left-color: #7b2fff;
-      background: rgba(30,0,60,0.55);
-    }
+    .lb-row:last-child  { border-bottom: none; }
+    .lb-row:nth-child(odd)  { background: rgba(10,10,18,.6); }
+    .lb-row:nth-child(even) { background: rgba(13,13,26,.6); }
+    .lb-row:hover { background: rgba(26,0,51,.7); border-left-color: #ff2d78; }
+    .lb-row.current-user { border-left-color: #7b2fff; background: rgba(30,0,60,.55); }
 
     .lb-row span {
-      font-size: 0.6rem;
-      letter-spacing: 0.08em;
-      color: rgba(224,224,255,0.7);
-      display: flex;
-      align-items: center;
+      font-size: .6rem; letter-spacing: .08em;
+      color: rgba(224,224,255,.7);
+      display: flex; align-items: center;
     }
 
-    .lb-rank {
-      font-size: 0.7rem !important;
-      font-weight: 700;
-      color: rgba(224,224,255,0.4) !important;
-    }
-
+    .lb-rank { font-size: .7rem !important; font-weight: 700; color: rgba(224,224,255,.4) !important; }
     .rank-gold   { color: #ffd700 !important; text-shadow: 0 0 8px #ffd700; }
     .rank-silver { color: #c0c0c0 !important; text-shadow: 0 0 8px #c0c0c0; }
     .rank-bronze { color: #cd7f32 !important; text-shadow: 0 0 8px #cd7f32; }
@@ -123,40 +87,81 @@
     .username-bronze { color: #cd7f32 !important; text-shadow: 0 0 8px #cd7f32; }
     .username-normal { color: #00f5ff !important; }
 
+    /* YOUR RANK separator */
+    .lb-your-rank-sep {
+      padding: 6px 18px; background: rgba(123,47,255,.18);
+      border-top: 1px solid rgba(123,47,255,.4);
+      border-bottom: 1px solid rgba(123,47,255,.4);
+      display: flex; align-items: center; gap: 12px;
+    }
+    .lb-your-rank-sep span {
+      font-size: .46rem; letter-spacing: .28em; color: #7b2fff;
+    }
+
+    /* Tooltip */
+    .lb-tooltip {
+      display: none; position: absolute;
+      top: 50%; right: calc(100% + 8px);
+      transform: translateY(-50%);
+      background: rgba(6,6,18,.97);
+      border: 1px solid rgba(0,245,255,.2);
+      padding: .6rem .9rem; white-space: nowrap;
+      z-index: 200; pointer-events: none;
+      font-size: .52rem; letter-spacing: .1em;
+      color: rgba(224,224,255,.8);
+      line-height: 1.7;
+      box-shadow: 0 4px 24px rgba(0,0,0,.5);
+    }
+    .lb-row:hover .lb-tooltip { display: block; }
+    .lb-tooltip-title {
+      font-size: .56rem; font-weight: 700; color: #00f5ff;
+      margin-bottom: .3rem; letter-spacing: .18em;
+    }
+
+    .lb-badge-cell { display: flex; align-items: center; }
+
     .lb-empty {
-      padding: 3rem;
-      text-align: center;
-      font-size: 0.7rem;
-      letter-spacing: 0.2em;
-      color: rgba(224,224,255,0.25);
+      padding: 3rem; text-align: center;
+      font-size: .7rem; letter-spacing: .2em; color: rgba(224,224,255,.25);
+    }
+    /* Filter tabs */
+    .lb-filters {
+      display: flex; gap: .6rem;
+      width: 100%; max-width: 900px;
+      margin-bottom: 1rem;
+    }
+    .lb-filter-tab {
+      font-family: 'Orbitron', sans-serif;
+      font-size: .5rem; letter-spacing: .22em;
+      padding: .45rem 1.1rem;
+      background: rgba(10,10,22,.7);
+      border: 1px solid rgba(0,245,255,.15);
+      color: rgba(224,224,255,.4);
+      cursor: pointer; transition: all .18s;
+      user-select: none;
+    }
+    .lb-filter-tab:hover {
+      border-color: rgba(0,245,255,.35);
+      color: rgba(224,224,255,.7);
+    }
+    .lb-filter-tab.active {
+      border-color: #00f5ff;
+      color: #00f5ff;
+      text-shadow: 0 0 8px rgba(0,245,255,.5);
+      background: rgba(0,245,255,.06);
     }
 
     .lb-footer {
-      margin-top: 1.5rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      width: 100%;
-      max-width: 800px;
+      margin-top: 1.5rem; display: flex;
+      align-items: center; justify-content: space-between;
+      width: 100%; max-width: 900px;
     }
-
-    .lb-refresh-info {
-      font-size: 0.48rem;
-      letter-spacing: 0.18em;
-      color: rgba(224,224,255,0.25);
-    }
-
+    .lb-refresh-info { font-size: .48rem; letter-spacing: .18em; color: rgba(224,224,255,.25); }
     #lb-status {
-      font-size: 0.48rem;
-      letter-spacing: 0.18em;
-      color: #00f5ff;
-      opacity: 0;
-      transition: opacity 0.3s;
+      font-size: .48rem; letter-spacing: .18em; color: #00f5ff;
+      opacity: 0; transition: opacity .3s;
     }
     #lb-status.visible { opacity: 1; }
-
-    /* rank badge cells don't need flex align */
-    .lb-badge-cell { display: flex; align-items: center; }
   </style>
 </head>
 <body>
@@ -166,19 +171,27 @@
     <div class="lb-header">
       <div>
         <div class="lb-title">NEON GRID — TOP OPERATIVES</div>
-        <div class="lb-subtitle">GLOBAL LEADERBOARD · SORTED BY XP</div>
+        <div class="lb-subtitle">GLOBAL LEADERBOARD · SORTED BY RANK POINTS</div>
       </div>
       <a href="/" class="btn btn-accent" style="font-size:.62rem;padding:.5rem 1.2rem;">← BACK</a>
     </div>
 
+    <div class="lb-filters" id="lb-filters">
+      <div class="lb-filter-tab active" data-period="all">ALL TIME</div>
+      <div class="lb-filter-tab" data-period="week">THIS WEEK</div>
+      <div class="lb-filter-tab" data-period="today">TODAY</div>
+    </div>
+
     <div class="lb-table-wrap">
-      <div class="lb-thead">
-        <span>RANK</span>
+      <div class="lb-thead lb-grid">
+        <span>#</span>
         <span>OPERATIVE</span>
-        <span>LEVEL</span>
+        <span>LVL</span>
         <span>TIER</span>
         <span>K/D</span>
         <span>KILLS</span>
+        <span>HS%</span>
+        <span>WIN%</span>
       </div>
       <div id="lb-body">
         <div class="lb-empty">LOADING…</div>
@@ -186,7 +199,7 @@
     </div>
 
     <div class="lb-footer">
-      <span class="lb-refresh-info">Auto-refreshes every 30 seconds</span>
+      <span class="lb-refresh-info">Auto-refreshes every 60 seconds</span>
       <span id="lb-status">↻ UPDATED</span>
     </div>
   </div>
@@ -195,74 +208,132 @@
     import { renderRankBadge } from '/js/RankBadge.js';
 
     const currentUser = localStorage.getItem('ng_username') || '';
+    const token       = localStorage.getItem('neon_token') || '';
 
-    function rankClass(rank) {
-      if (rank === 1) return 'rank-gold';
-      if (rank === 2) return 'rank-silver';
-      if (rank === 3) return 'rank-bronze';
+    function rankClass(pos) {
+      if (pos === 1) return 'rank-gold';
+      if (pos === 2) return 'rank-silver';
+      if (pos === 3) return 'rank-bronze';
       return '';
     }
-
-    function usernameClass(rank) {
-      if (rank === 1) return 'username-gold';
-      if (rank === 2) return 'username-silver';
-      if (rank === 3) return 'username-bronze';
+    function usernameClass(pos) {
+      if (pos === 1) return 'username-gold';
+      if (pos === 2) return 'username-silver';
+      if (pos === 3) return 'username-bronze';
       return 'username-normal';
+    }
+
+    function buildRow(r, pos) {
+      const isCurrent = currentUser && r.username.toLowerCase() === currentUser.toLowerCase();
+      const tierName  = r.rank_division > 1
+        ? `${r.rank_tier} D${r.rank_division}` : r.rank_tier;
+
+      const row = document.createElement('div');
+      row.className = `lb-row lb-grid${isCurrent ? ' current-user' : ''}`;
+
+      // Tooltip
+      const tip = document.createElement('div');
+      tip.className = 'lb-tooltip';
+      tip.innerHTML = `
+        <div class="lb-tooltip-title">${r.username.toUpperCase()}</div>
+        Kills: ${r.kills} &nbsp;&nbsp; Deaths: ${r.deaths}<br>
+        Headshots: ${r.headshots ?? 0} &nbsp;&nbsp; HS Rate: ${r.hs_rate ?? 0}%<br>
+        Matches: ${r.matches_played} &nbsp;&nbsp; Wins: ${r.matches_won}<br>
+        Win Rate: ${r.win_rate ?? 0}% &nbsp;&nbsp; Level: ${r.level}<br>
+        Rank Points: ${r.rank_points}
+      `;
+
+      const posSpan = document.createElement('span');
+      posSpan.className = `lb-rank ${rankClass(pos)}`;
+      posSpan.textContent = '#' + pos;
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = `lb-username ${usernameClass(pos)}`;
+      nameSpan.textContent = r.username;
+      nameSpan.style.cursor = 'pointer';
+      nameSpan.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.location.href = `/profile.html?u=${encodeURIComponent(r.username)}`;
+      });
+
+      const lvlSpan = document.createElement('span');
+      lvlSpan.textContent = r.level;
+
+      const badgeCell = document.createElement('span');
+      badgeCell.className = 'lb-badge-cell';
+      badgeCell.appendChild(renderRankBadge(tierName, r.rank_points, 'sm'));
+
+      const kdSpan = document.createElement('span');
+      kdSpan.textContent = (r.kd_ratio || 0).toFixed(2);
+
+      const killsSpan = document.createElement('span');
+      killsSpan.textContent = r.kills;
+
+      const hsSpan = document.createElement('span');
+      hsSpan.textContent = (r.hs_rate ?? 0) + '%';
+
+      const winSpan = document.createElement('span');
+      winSpan.textContent = (r.win_rate ?? 0) + '%';
+
+      row.append(tip, posSpan, nameSpan, lvlSpan, badgeCell, kdSpan, killsSpan, hsSpan, winSpan);
+      return row;
     }
 
     async function loadLeaderboard() {
       try {
-        const res  = await fetch('/auth/leaderboard');
+        const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+        const res  = await fetch('/api/leaderboard?limit=100', { headers });
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        const rows = await res.json();
+        const { rows, callerRow } = await res.json();
 
         const body = document.getElementById('lb-body');
-        if (!rows.length) {
+        if (!rows || !rows.length) {
           body.innerHTML = '<div class="lb-empty">NO OPERATIVES RANKED YET. PLAY TO EARN XP.</div>';
           return;
         }
 
         body.innerHTML = '';
         rows.forEach((r, i) => {
-          const pos       = i + 1;
-          const isCurrent = r.username.toLowerCase() === currentUser.toLowerCase();
-
-          const row = document.createElement('div');
-          row.className = `lb-row${isCurrent ? ' current-user' : ''}`;
-
-          // Position number
-          const posSpan = document.createElement('span');
-          posSpan.className = `lb-rank ${rankClass(pos)}`;
-          posSpan.textContent = '#' + pos;
-
-          // Username
-          const nameSpan = document.createElement('span');
-          nameSpan.className = `lb-username ${usernameClass(pos)}`;
-          nameSpan.textContent = r.username;
-
-          // Level
-          const lvlSpan = document.createElement('span');
-          lvlSpan.textContent = r.level;
-
-          // Rank badge
-          const badgeCell = document.createElement('span');
-          badgeCell.className = 'lb-badge-cell';
-          const tierName = r.rank_division > 1
-            ? `${r.rank_tier} D${r.rank_division}`
-            : r.rank_tier;
-          badgeCell.appendChild(renderRankBadge(tierName, r.rank_points, 'sm'));
-
-          // K/D
-          const kdSpan = document.createElement('span');
-          kdSpan.textContent = (r.kd_ratio || 0).toFixed(2);
-
-          // Kills
-          const killsSpan = document.createElement('span');
-          killsSpan.textContent = r.kills;
-
-          row.append(posSpan, nameSpan, lvlSpan, badgeCell, kdSpan, killsSpan);
-          body.appendChild(row);
+          body.appendChild(buildRow(r, i + 1));
         });
+
+        // Show "YOUR RANK" separator if caller is outside top 100
+        if (callerRow && callerRow.stats && callerRow.rank) {
+          const sep = document.createElement('div');
+          sep.className = 'lb-your-rank-sep';
+          sep.innerHTML = `
+            <span>YOUR RANK</span>
+            <span style="color:rgba(224,224,255,.45);letter-spacing:.1em">
+              ${callerRow.user.username.toUpperCase()}
+            </span>
+            <span style="color:rgba(200,200,255,.3);letter-spacing:.1em">
+              (OUTSIDE TOP 100)
+            </span>
+          `;
+          body.appendChild(sep);
+
+          const callerEntry = {
+            id:            callerRow.user.id,
+            username:      callerRow.user.username,
+            rank_tier:     callerRow.rank.rank_tier,
+            rank_division: callerRow.rank.rank_division,
+            rank_points:   callerRow.rank.rank_points,
+            kills:         callerRow.stats.kills,
+            deaths:        callerRow.stats.deaths,
+            headshots:     callerRow.stats.headshots,
+            matches_played: callerRow.stats.matches_played,
+            matches_won:   callerRow.stats.matches_won,
+            level:         callerRow.stats.level,
+            kd_ratio:      callerRow.stats.kills / Math.max(callerRow.stats.deaths, 1),
+            hs_rate:       callerRow.stats.kills > 0
+              ? Math.round(callerRow.stats.headshots / callerRow.stats.kills * 100) : 0,
+            win_rate:      callerRow.stats.matches_played > 0
+              ? Math.round(callerRow.stats.matches_won / callerRow.stats.matches_played * 100) : 0,
+          };
+          const callerRowEl = buildRow(callerEntry, '?');
+          callerRowEl.classList.add('current-user');
+          body.appendChild(callerRowEl);
+        }
 
         const status = document.getElementById('lb-status');
         status.classList.add('visible');
@@ -274,7 +345,15 @@
     }
 
     loadLeaderboard();
-    setInterval(loadLeaderboard, 30000);
+    setInterval(loadLeaderboard, 60000);
+
+    // Filter tabs — toggle active state (stub; all periods show all-time data)
+    document.getElementById('lb-filters').addEventListener('click', e => {
+      const tab = e.target.closest('.lb-filter-tab');
+      if (!tab) return;
+      document.querySelectorAll('.lb-filter-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+    });
   </script>
 </body>
 </html>

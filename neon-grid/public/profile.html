@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEON GRID — OPERATIVE PROFILE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    .pf-wrap {
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center;
+      padding: 3rem 1.5rem 4rem;
+      position: relative;
+    }
+    .pf-bg {
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(123,47,255,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(123,47,255,0.04) 1px, transparent 1px);
+      background-size: 60px 60px;
+      mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 20%, transparent 100%);
+      pointer-events: none;
+    }
+    .pf-header {
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%; max-width: 860px; margin-bottom: 2rem;
+    }
+    .pf-identity {
+      display: flex; align-items: center; gap: 1rem;
+    }
+    .pf-username {
+      font-size: clamp(1.4rem, 4vw, 2.2rem);
+      font-weight: 900; letter-spacing: .15em;
+      color: #e0e0ff; text-shadow: 0 0 10px rgba(224,224,255,.3);
+    }
+    .pf-body {
+      width: 100%; max-width: 860px;
+      display: flex; gap: 1.5rem; flex-wrap: wrap;
+    }
+    .pf-col-main { flex: 1 1 480px; min-width: 0; }
+    .pf-col-side { width: 280px; flex-shrink: 0; }
+
+    .pf-card {
+      background: rgba(10,10,20,.88);
+      border: 1px solid rgba(0,245,255,.15);
+      backdrop-filter: blur(8px);
+      margin-bottom: 1.25rem;
+    }
+    .pf-card-title {
+      font-size: .5rem; letter-spacing: .28em; color: #00f5ff;
+      padding: .75rem 1.25rem; border-bottom: 1px solid rgba(0,245,255,.12);
+    }
+    .pf-card-body { padding: 1rem 1.25rem; }
+
+    /* XP progress bar */
+    .pf-xp-wrap { display: flex; flex-direction: column; gap: .4rem; }
+    .pf-xp-label {
+      font-size: .52rem; letter-spacing: .18em; color: rgba(224,224,255,.55);
+      display: flex; justify-content: space-between;
+    }
+    .pf-xp-track {
+      height: 4px; background: rgba(0,245,255,.12); border-radius: 2px; overflow: hidden;
+    }
+    .pf-xp-fill {
+      height: 100%; background: #00f5ff;
+      box-shadow: 0 0 8px #00f5ff;
+      transition: width .6s ease;
+    }
+
+    /* Stats grid */
+    .pf-stats-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: .75rem;
+    }
+    .pf-stat-item {
+      display: flex; flex-direction: column; align-items: center; gap: .25rem;
+      background: rgba(0,0,15,.5); padding: .6rem .4rem;
+      border: 1px solid rgba(0,245,255,.08);
+    }
+    .pf-stat-val {
+      font-size: 1.2rem; font-weight: 900; letter-spacing: .04em; color: #e0e0ff;
+    }
+    .pf-stat-lbl {
+      font-size: .42rem; letter-spacing: .18em; color: rgba(200,200,255,.4);
+      text-align: center;
+    }
+
+    /* Rank history */
+    .pf-rp-list { display: flex; flex-wrap: wrap; gap: .4rem; }
+    .pf-rp-badge {
+      font-size: .52rem; letter-spacing: .1em; padding: .25rem .55rem;
+      border: 1px solid; border-radius: 2px; white-space: nowrap;
+    }
+    .pf-rp-badge.pos { color: #00f5ff; border-color: rgba(0,245,255,.4); }
+    .pf-rp-badge.neg { color: #ff2d78; border-color: rgba(255,45,120,.4); }
+
+    /* Match history */
+    .pf-match-row {
+      display: grid;
+      grid-template-columns: 1fr 60px 50px 50px 70px 80px;
+      gap: 4px; padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,.05);
+      font-size: .54rem; letter-spacing: .08em;
+      align-items: center;
+    }
+    .pf-match-row:last-child { border-bottom: none; }
+    .pf-match-map { color: rgba(200,200,255,.75); font-weight: 700; }
+    .pf-match-result.win  { color: #00f5ff; }
+    .pf-match-result.loss { color: #ff2d78; }
+    .pf-match-num { color: rgba(200,200,255,.55); text-align: center; }
+    .pf-match-rp.pos { color: #00f5ff; }
+    .pf-match-rp.neg { color: #ff2d78; }
+    .pf-match-date { color: rgba(200,200,255,.3); font-size: .46rem; }
+
+    .pf-thead {
+      display: grid;
+      grid-template-columns: 1fr 60px 50px 50px 70px 80px;
+      gap: 4px; padding-bottom: .4rem;
+      border-bottom: 1px solid rgba(0,245,255,.2);
+      margin-bottom: .25rem;
+    }
+    .pf-thead span {
+      font-size: .44rem; letter-spacing: .2em; color: #00f5ff;
+      text-align: center;
+    }
+    .pf-thead span:first-child { text-align: left; }
+
+    .pf-error {
+      font-size: .7rem; letter-spacing: .2em; color: rgba(224,224,255,.3);
+      text-align: center; padding: 4rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="pf-wrap">
+    <div class="pf-bg" aria-hidden="true"></div>
+
+    <div class="pf-header">
+      <div class="pf-identity">
+        <div class="pf-username" id="pf-username">LOADING…</div>
+        <div id="pf-rank-badge"></div>
+      </div>
+      <a href="/" class="btn btn-accent" style="font-size:.62rem;padding:.5rem 1.2rem;">← BACK</a>
+    </div>
+
+    <div id="pf-body" class="pf-body" style="display:none">
+      <!-- Main column -->
+      <div class="pf-col-main">
+
+        <!-- XP / Level -->
+        <div class="pf-card" id="pf-xp-card">
+          <div class="pf-card-title">LEVEL PROGRESS</div>
+          <div class="pf-card-body">
+            <div class="pf-xp-wrap">
+              <div class="pf-xp-label">
+                <span id="pf-level-label">LVL 1</span>
+                <span id="pf-xp-label">0 / 400 XP</span>
+              </div>
+              <div class="pf-xp-track">
+                <div class="pf-xp-fill" id="pf-xp-fill" style="width:0%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Career stats -->
+        <div class="pf-card">
+          <div class="pf-card-title">CAREER STATS</div>
+          <div class="pf-card-body">
+            <div class="pf-stats-grid" id="pf-stats-grid"></div>
+          </div>
+        </div>
+
+        <!-- Recent matches -->
+        <div class="pf-card">
+          <div class="pf-card-title">RECENT MATCHES</div>
+          <div class="pf-card-body" id="pf-matches-body">
+            <div class="pf-thead">
+              <span>MAP</span>
+              <span>RESULT</span>
+              <span>K</span>
+              <span>D</span>
+              <span>RP</span>
+              <span>DATE</span>
+            </div>
+            <div id="pf-matches"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Side column -->
+      <div class="pf-col-side">
+
+        <!-- Rank history -->
+        <div class="pf-card">
+          <div class="pf-card-title">RANK HISTORY</div>
+          <div class="pf-card-body">
+            <div class="pf-rp-list" id="pf-rp-history"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div id="pf-error" class="pf-error" style="display:none">OPERATIVE NOT FOUND</div>
+  </div>
+
+  <script type="module">
+    import { renderRankBadge, getRankFromRP } from '/js/RankBadge.js';
+
+    const params   = new URLSearchParams(location.search);
+    const username = params.get('u') || '';
+
+    if (!username) {
+      document.getElementById('pf-username').textContent = 'NO USERNAME';
+      document.getElementById('pf-error').style.display = 'block';
+    } else {
+      load(username);
+    }
+
+    async function load(u) {
+      try {
+        const res = await fetch(`/api/profile/${encodeURIComponent(u)}`);
+        if (!res.ok) throw new Error('not found');
+        const data = await res.json();
+        render(data);
+      } catch {
+        document.getElementById('pf-username').textContent = u.toUpperCase();
+        document.getElementById('pf-error').style.display = 'block';
+      }
+    }
+
+    function render({ user, stats, rank, recentMatches, rankHistory }) {
+      document.title = `NEON GRID — ${user.username.toUpperCase()}`;
+      document.getElementById('pf-username').textContent = user.username.toUpperCase();
+      document.getElementById('pf-body').style.display = 'flex';
+
+      // Rank badge
+      const badgeWrap = document.getElementById('pf-rank-badge');
+      if (rank) {
+        const tierName = rank.rank_division > 1
+          ? `${rank.rank_tier} D${rank.rank_division}`
+          : rank.rank_tier;
+        badgeWrap.appendChild(renderRankBadge(tierName, rank.rank_points, 'md'));
+      }
+
+      // XP progress bar
+      if (stats) {
+        const lv  = stats.level || 1;
+        const xp  = stats.xp || 0;
+        const lvStart = lv >= 2 ? lv * lv * 100 : 0;
+        const lvEnd   = (lv + 1) * (lv + 1) * 100;
+        const pct = Math.min(100, ((xp - lvStart) / (lvEnd - lvStart)) * 100).toFixed(1);
+        document.getElementById('pf-level-label').textContent = `LVL ${lv}`;
+        document.getElementById('pf-xp-label').textContent = `${xp} / ${lvEnd} XP`;
+        document.getElementById('pf-xp-fill').style.width = pct + '%';
+
+        // Stats grid
+        const kd   = (stats.kills / Math.max(stats.deaths, 1)).toFixed(2);
+        const hs   = stats.kills > 0 ? ((stats.headshots / stats.kills) * 100).toFixed(1) + '%' : '0%';
+        const wr   = stats.matches_played > 0
+          ? ((stats.matches_won / stats.matches_played) * 100).toFixed(1) + '%' : '0%';
+
+        const STAT_ITEMS = [
+          { val: stats.kills,           lbl: 'KILLS'      },
+          { val: stats.deaths,          lbl: 'DEATHS'     },
+          { val: kd,                    lbl: 'K/D RATIO'  },
+          { val: stats.headshots,       lbl: 'HEADSHOTS'  },
+          { val: hs,                    lbl: 'HS RATE'    },
+          { val: stats.damage_dealt,    lbl: 'DAMAGE'     },
+          { val: stats.matches_played,  lbl: 'MATCHES'    },
+          { val: stats.matches_won,     lbl: 'WINS'       },
+          { val: wr,                    lbl: 'WIN RATE'   },
+        ];
+        const grid = document.getElementById('pf-stats-grid');
+        STAT_ITEMS.forEach(({ val, lbl }) => {
+          const item = document.createElement('div');
+          item.className = 'pf-stat-item';
+          item.innerHTML = `
+            <div class="pf-stat-val">${val ?? 0}</div>
+            <div class="pf-stat-lbl">${lbl}</div>
+          `;
+          grid.appendChild(item);
+        });
+      }
+
+      // Recent matches
+      const matchesEl = document.getElementById('pf-matches');
+      if (recentMatches && recentMatches.length > 0) {
+        recentMatches.forEach(m => {
+          const won = m.placement === 1;
+          const rp  = m.rp_change || 0;
+          const row = document.createElement('div');
+          row.className = 'pf-match-row';
+          const date = m.started_at ? new Date(m.started_at).toLocaleDateString() : '—';
+          row.innerHTML = `
+            <span class="pf-match-map">${(m.map_name || 'TERMINAL').toUpperCase()}</span>
+            <span class="pf-match-result ${won ? 'win' : 'loss'}">${won ? 'WIN' : 'LOSS'}</span>
+            <span class="pf-match-num">${m.kills ?? 0}</span>
+            <span class="pf-match-num">${m.deaths ?? 0}</span>
+            <span class="pf-match-rp ${rp >= 0 ? 'pos' : 'neg'}">${rp >= 0 ? '+' : ''}${rp} RP</span>
+            <span class="pf-match-date">${date}</span>
+          `;
+          matchesEl.appendChild(row);
+        });
+      } else {
+        matchesEl.innerHTML = '<div style="font-size:.56rem;color:rgba(200,200,255,.3);padding:.5rem 0">NO MATCHES YET</div>';
+      }
+
+      // Rank history
+      const rpEl = document.getElementById('pf-rp-history');
+      if (rankHistory && rankHistory.length > 0) {
+        rankHistory.forEach(h => {
+          const rp  = h.rp_change || 0;
+          const badge = document.createElement('div');
+          badge.className = `pf-rp-badge ${rp >= 0 ? 'pos' : 'neg'}`;
+          badge.textContent = `${rp >= 0 ? '+' : ''}${rp} RP`;
+          badge.title = h.map_name || '';
+          rpEl.appendChild(badge);
+        });
+      } else {
+        rpEl.innerHTML = '<div style="font-size:.52rem;color:rgba(200,200,255,.3)">NO RANK HISTORY</div>';
+      }
+    }
+  </script>
+</body>
+</html>

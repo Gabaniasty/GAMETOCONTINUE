@@ -85,3 +85,49 @@ router.get('/match-history', verifyToken, (req, res) => {
 });
 
 module.exports = { router, verifyToken, SECRET };
+
+// ── Separate read-only public API router ───────────────────────
+const apiRouter = require('express').Router();
+
+// GET /api/leaderboard?limit=100
+apiRouter.get('/leaderboard', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 100, 100);
+  const rows  = db.getLeaderboardFull(limit);
+
+  // If authenticated, check if caller is outside top 100
+  const token = (req.headers.authorization || '').replace('Bearer ', '');
+  let callerUsername = null;
+  let callerRow      = null;
+  if (token) {
+    try {
+      const jwt     = require('jsonwebtoken');
+      const payload = jwt.verify(token, SECRET);
+      callerUsername = payload.username;
+    } catch (_) {}
+  }
+
+  if (callerUsername && !rows.find(r => r.username === callerUsername)) {
+    callerRow = db.getProfileByUsername(callerUsername);
+  }
+
+  res.json({ rows, callerRow: callerRow ? callerRow : null });
+});
+
+// GET /api/profile/:username
+apiRouter.get('/profile/:username', (req, res) => {
+  const profile = db.getProfileByUsername(req.params.username);
+  if (!profile) return res.status(404).json({ error: 'Operative not found' });
+  res.json(profile);
+});
+
+// GET /api/stats/me  (requires auth)
+apiRouter.get('/stats/me', (req, res, next) => verifyToken(req, res, next), (req, res) => {
+  const user = db.getUserById(req.user.userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const stats   = db.getStats(req.user.userId);
+  const rank    = db.getRank(req.user.userId);
+  const history = db.getMatchHistory(req.user.userId, 10);
+  res.json({ username: user.username, stats, rank, history });
+});
+
+module.exports.apiRouter = apiRouter;
