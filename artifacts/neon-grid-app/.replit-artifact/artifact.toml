@@ -11,16 +11,16 @@ version = "1.0.0"
 
 [[services]]
 name = "web"
-paths = ["/", "/api/leaderboard", "/api/profile", "/api/stats", "/api/match"]
+paths = ["/", "/api/leaderboard", "/api/profile", "/api/stats", "/api/match", "/auth"]
 localPort = 3000
 
 [services.development]
-run = "node neon-grid/server.js"
+run = "node /home/runner/workspace/neon-grid/server.js"
 
 [services.production]
 
 [services.production.run]
-args = ["node", "neon-grid/server.js"]
+args = ["node", "/home/runner/workspace/neon-grid/server.js"]
 
 [services.production.run.env]
 PORT = "3000"

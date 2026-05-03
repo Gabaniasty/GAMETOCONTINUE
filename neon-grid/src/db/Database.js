@@ -12,16 +12,10 @@ const db = new BetterSQLite(DB_PATH);
 
 db.pragma('journal_mode = WAL');
 
-// ── Schema migration: drop old tables, create new ones ───────────────
+// ── Schema: create tables if they don't exist (never drops data) ──────
 db.pragma('foreign_keys = OFF');
-db.exec(`
-  DROP TABLE IF EXISTS match_players;
-  DROP TABLE IF EXISTS matches;
-  DROP TABLE IF EXISTS player_rank;
-  DROP TABLE IF EXISTS player_stats;
-  DROP TABLE IF EXISTS stats;
-  DROP TABLE IF EXISTS users;
-`);
+// Remove legacy stats table only — no user data
+db.exec('DROP TABLE IF EXISTS stats;');
 db.pragma('foreign_keys = ON');
 
 db.exec(`
