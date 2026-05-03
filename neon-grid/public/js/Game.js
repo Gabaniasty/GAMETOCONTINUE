@@ -236,9 +236,10 @@ export class Game {
   // ── Remote players (geometry-model based — instant, no async GLB) ─
   _spawnRemotePlayer(player) {
     if (this._remoteControllers.has(player.id)) return;
-    const classColor = CLASS_COLORS[player.class] || 0x00f5ff;
+    // All enemies render in red so you can instantly tell friend from foe
+    const ENEMY_COLOR = 0xff2222;
     const group = buildCharacterModel(
-      classColor,
+      ENEMY_COLOR,
       player.class   || 'SOLDIER',
       player.username || 'Unknown',
       player.level   || 1,
