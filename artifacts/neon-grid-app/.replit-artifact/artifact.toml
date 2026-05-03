@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "NEON GRID"
+version = "1.0.0"
+id = "artifacts/neon-grid-app"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = ["/", "/api/leaderboard", "/api/profile", "/api/stats", "/api/match", "/api/lobby", "/auth"]
+localPort = 3000
+
+[services.development]
+run = "node /home/runner/workspace/neon-grid/server.js"
+
+[services.production]
+
+[services.production.run]
+args = ["node", "/home/runner/workspace/neon-grid/server.js"]
+
+[services.production.run.env]
+PORT = "3000"
+NODE_ENV = "production"

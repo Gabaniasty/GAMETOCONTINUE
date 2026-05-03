@@ -1,0 +1,253 @@
+Build a complete professional sound system for NEON GRID using Web Audio API only.
+No audio files. All sounds synthesized procedurally.
+Create public/js/SoundEngine.js — a single class managing all game audio.
+
+class SoundEngine {
+  constructor() {
+    this.ctx = null
+    this.masterGain = null
+    this.initialized = false
+    this.footstepTimer = 0
+    this.footstepInterval = 0.42   // seconds between steps at walk speed
+    this.lastSurface = 'concrete'
+  }
+
+  init() {
+    if (this.initialized) return
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)()
+    this.masterGain = this.ctx.createGain()
+    this.masterGain.gain.value = 0.8
+    this.masterGain.connect(this.ctx.destination)
+    this.initialized = true
+  }
+
+  // ── CORE HELPERS ──
+
+  noise(duration, freq1, freq2, gain, filterType='lowpass') {
+    const bufferSize = this.ctx.sampleRate * duration
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate)
+    const data = buffer.getChannelData(0)
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1
+    const src = this.ctx.createBufferSource()
+    src.buffer = buffer
+    const filter = this.ctx.createBiquadFilter()
+    filter.type = filterType
+    filter.frequency.value = freq1
+    if (freq2) filter.frequency.linearRampToValueAtTime(freq2, this.ctx.currentTime + duration)
+    const g = this.ctx.createGain()
+    g.gain.value = gain
+    src.connect(filter); filter.connect(g); g.connect(this.masterGain)
+    src.start(); src.stop(this.ctx.currentTime + duration)
+    return { src, filter, gain: g }
+  }
+
+  tone(freq1, freq2, duration, gainPeak, type='sine', startOffset=0) {
+    const osc = this.ctx.createOscillator()
+    const g   = this.ctx.createGain()
+    osc.type = type
+    osc.frequency.setValueAtTime(freq1, this.ctx.currentTime + startOffset)
+    if (freq2) osc.frequency.linearRampToValueAtTime(freq2, this.ctx.currentTime + startOffset + duration)
+    g.gain.setValueAtTime(0, this.ctx.currentTime + startOffset)
+    g.gain.linearRampToValueAtTime(gainPeak, this.ctx.currentTime + startOffset + 0.004)
+    g.gain.linearRampToValueAtTime(0, this.ctx.currentTime + startOffset + duration)
+    osc.connect(g); g.connect(this.masterGain)
+    osc.start(this.ctx.currentTime + startOffset)
+    osc.stop(this.ctx.currentTime + startOffset + duration + 0.01)
+  }
+
+  // ── AWP SHOT ──
+  play_awp_fire() {
+    // Layer 1: Initial transient crack
+    this.tone(220, 60,  0.08, 1.0, 'sawtooth')
+    // Layer 2: High crack body
+    this.tone(180, 80,  0.12, 0.8, 'square')
+    // Layer 3: Noise pressure wave
+    this.noise(0.09, 250, 80, 0.9, 'lowpass')
+    // Layer 4: Sub bass thump
+    this.tone(65, 20, 0.14, 0.9, 'sine')
+    // Layer 5: Long echo tail (reverb simulation)
+    this.noise(1.8, 600, 100, 0.3, 'bandpass')
+    // Layer 6: High-freq overtone ring
+    this.tone(1200, 400, 0.4, 0.2, 'triangle')
+  }
+
+  // ── AWP BOLT ──
+  play_awp_reload() {
+    // Clunk: bolt lift
+    this.noise(0.07, 300, 150, 0.5, 'highpass')
+    // Slide: bolt pull back
+    setTimeout(() => this.noise(0.12, 800, 200, 0.35, 'bandpass'), 180)
+    // Click: round chambered
+    setTimeout(() => this.noise(0.05, 1200, 600, 0.6, 'highpass'), 380)
+    // Clunk: bolt close
+    setTimeout(() => this.noise(0.08, 250, 100, 0.55, 'lowpass'), 500)
+  }
+
+  // ── SCOPE IN / OUT ──
+  play_scope_in() {
+    this.tone(800, 1200, 0.08, 0.15, 'sine')
+    this.noise(0.06, 3000, 6000, 0.08, 'highpass')
+  }
+  play_scope_out() {
+    this.tone(1200, 700, 0.08, 0.12, 'sine')
+    this.noise(0.06, 6000, 2000, 0.06, 'highpass')
+  }
+
+  // ── HIT CONFIRM ──
+  play_hit_confirm() {
+    // Short metallic tick
+    this.tone(1800, 900, 0.05, 0.25, 'triangle')
+  }
+
+  // ── HEADSHOT CONFIRM (distinct from body hit) ──
+  play_headshot_confirm() {
+    this.tone(2200, 1400, 0.06, 0.3, 'sine')
+    this.tone(2800, 2000, 0.08, 0.2, 'triangle', 0.02)
+  }
+
+  // ── TAKE DAMAGE ──
+  play_take_damage() {
+    this.noise(0.12, 180, 80, 0.6, 'lowpass')
+    this.tone(60, 30, 0.1, 0.5, 'sine')
+  }
+
+  // ── KILL SOUND ──
+  play_kill() {
+    // Satisfying ascending triple beep
+    this.tone(440, 440, 0.09, 0.25, 'sine', 0.0)
+    this.tone(554, 554, 0.09, 0.25, 'sine', 0.1)
+    this.tone(659, 659, 0.12, 0.30, 'sine', 0.2)
+  }
+
+  // ── FOOTSTEPS ──
+  play_footstep(surface='concrete', volume=1.0) {
+    const step = Math.random()
+    if (surface === 'concrete') {
+      // Hard low thud with slight high click
+      this.noise(0.055, 120, 60, 0.28 * volume, 'lowpass')
+      if (step > 0.5) this.noise(0.025, 2000, 1000, 0.10 * volume, 'highpass')
+    } else if (surface === 'metal') {
+      // Hollow ring with clang
+      this.tone(280, 180, 0.12, 0.22 * volume, 'triangle')
+      this.noise(0.04, 600, 300, 0.18 * volume, 'bandpass')
+    } else if (surface === 'grate') {
+      // Thin metallic tap
+      this.tone(420, 240, 0.09, 0.18 * volume, 'square')
+      this.noise(0.03, 900, 500, 0.14 * volume, 'highpass')
+    }
+  }
+
+  // ── FOOTSTEP SYSTEM — called from game loop ──
+  updateFootsteps(delta, isMoving, speed, isSprinting, surfaceType) {
+    if (!isMoving) { this.footstepTimer = 0; return }
+    this.footstepTimer += delta
+    const interval = isSprinting ? 0.28 : 0.44
+    if (this.footstepTimer >= interval) {
+      this.footstepTimer = 0
+      const vol = isSprinting ? 0.9 : 0.6
+      this.play_footstep(surfaceType || 'concrete', vol)
+    }
+  }
+
+  // ── SURFACE DETECTION ──
+  detectSurface(collidableMeshes, playerPos) {
+    // Cast ray down, check what we land on
+    const raycaster = new THREE.Raycaster(
+      new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z),
+      new THREE.Vector3(0, -1, 0), 0, 2.5
+    )
+    const hits = raycaster.intersectObjects(collidableMeshes)
+    if (!hits.length) return 'concrete'
+    const obj = hits[0].object
+    if (obj.userData.surface) return obj.userData.surface
+    // Detect by material
+    if (obj.material && obj.material.wireframe) return 'grate'
+    if (obj.userData.isRooftop) return 'metal'
+    return 'concrete'
+  }
+
+  // ── AMBIENT SOUNDSCAPE ──
+  startAmbient() {
+    // Industrial hum — low continuous drone
+    const osc1 = this.ctx.createOscillator()
+    const osc2 = this.ctx.createOscillator()
+    const g = this.ctx.createGain()
+    osc1.type = 'sine'; osc1.frequency.value = 48
+    osc2.type = 'sine'; osc2.frequency.value = 51.5  // slight detune for movement
+    g.gain.value = 0.06
+    osc1.connect(g); osc2.connect(g); g.connect(this.masterGain)
+    osc1.start(); osc2.start()
+
+    // Distant city: random noise bursts every 4-12 seconds
+    const cityLoop = () => {
+      this.noise(0.4 + Math.random() * 0.8, 200, 80, 0.04 + Math.random() * 0.03, 'lowpass')
+      setTimeout(cityLoop, 4000 + Math.random() * 8000)
+    }
+    setTimeout(cityLoop, 2000)
+  }
+
+  // ── ANNOUNCER VOICE (synthesized) ──
+  playAnnouncement(type) {
+    // We cannot synthesize real speech — instead play a distinct tonal signature per event
+    const sigs = {
+      'first_blood':   [[300,200,0.15,0.4,'sawtooth'], [400,350,0.1,0.3,'sine',0.12]],
+      'double_kill':   [[350,350,0.08,0.3,'sine'], [440,440,0.08,0.3,'sine',0.1]],
+      'triple_kill':   [[300,300,0.07,0.25,'sine'], [400,400,0.07,0.25,'sine',0.08], [500,500,0.09,0.3,'sine',0.16]],
+      'killing_spree': [[220,440,0.3,0.4,'sawtooth']],
+      'match_start':   [[200,200,0.1,0.5,'sine'], [300,300,0.1,0.5,'sine',0.15], [400,400,0.2,0.6,'sine',0.3]],
+      'match_end':     [[400,200,0.5,0.5,'sine']],
+    }
+    const seq = sigs[type] || []
+    seq.forEach(([f1,f2,dur,gain,type,offset=0]) => this.tone(f1,f2,dur,gain,type,offset))
+
+    // Show announcement text on HUD at same time
+    document.dispatchEvent(new CustomEvent('announcement', { detail: { type } }))
+  }
+
+  play(soundName) {
+    if (!this.initialized) return
+    const fn = this['play_' + soundName]
+    if (fn) fn.call(this)
+  }
+}
+
+── HUD ANNOUNCEMENTS ──
+
+Listen for 'announcement' custom event in Hud.js:
+  Show large centered text for each type:
+    'first_blood'   → "FIRST BLOOD" red
+    'double_kill'   → "DOUBLE KILL" yellow
+    'triple_kill'   → "TRIPLE KILL" orange
+    'killing_spree' → "KILLING SPREE" pink pulsing
+    'match_start'   → "MATCH START" cyan
+    'match_end'     → "MATCH OVER" white
+  Text fades in over 0.2s, holds 2s, fades out 0.5s
+  Slight scale-up animation on entry (1.3x → 1.0x)
+
+── SERVER — trigger announcements ──
+
+In GameServer.js track:
+  firstBloodFired per match (boolean)
+  killStreaks per player (reset on death)
+
+Emit 'announcement' socket event to all match players:
+  First kill of match → 'first_blood'
+  Player gets 2nd kill without dying → 'double_kill'
+  Player gets 3rd kill without dying → 'triple_kill'
+  Player gets 4+ kills without dying → 'killing_spree'
+  Match starts → 'match_start'
+  Kill limit reached → 'match_end'
+
+ACCEPTANCE CRITERIA:
+✓ AWP shot sounds massive, layered, with echo tail
+✓ Bolt action reload plays as a multi-step mechanical sequence
+✓ Scope in/out has a distinct whoosh
+✓ Hit confirm is a sharp metallic tick
+✓ Headshot confirm is a higher-pitched version clearly distinguishable
+✓ Kill sound is a satisfying ascending triple tone
+✓ Footsteps play at correct rhythm for walk vs sprint
+✓ Footstep sound changes on metal grate vs concrete surfaces
+✓ Continuous ambient industrial hum plays throughout match
+✓ Announcement tones play on first blood, multi-kills, and match events
+✓ Announcement text appears on HUD in sync with sounds
+✓ Audio context resumes on first user interaction (no silent failures)

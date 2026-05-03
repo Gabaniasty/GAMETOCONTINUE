@@ -1,0 +1,175 @@
+Build a full matchmaking and lobby system for NEON GRID.
+Players enter a queue, get matched, see a pre-match lobby, then the match starts.
+This runs inside GameServer.js and a new src/game/Matchmaker.js file.
+
+── src/game/Matchmaker.js ──
+
+class Matchmaker {
+  constructor(io) {
+    this.io = io
+    this.queue = []           // { socketId, userId, username, rankPoints, queuedAt }
+    this.activeMatches = new Map()  // matchId → Match object
+    this.MATCH_SIZE = 6       // 6 players per match (3v3 deathmatch for now)
+    this.QUEUE_INTERVAL = 2000
+    setInterval(() => this.processQueue(), this.QUEUE_INTERVAL)
+  }
+
+  joinQueue(socket, playerData) {
+    if (this.queue.find(p => p.socketId === socket.id)) return
+    if (this.isInMatch(socket.id)) return
+    this.queue.push({ socketId: socket.id, ...playerData, queuedAt: Date.now() })
+    socket.emit('queue:joined', { position: this.queue.length })
+    this.broadcastQueueSize()
+  }
+
+  leaveQueue(socketId) {
+    this.queue = this.queue.filter(p => p.socketId !== socketId)
+    this.broadcastQueueSize()
+  }
+
+  processQueue() {
+    // Sort queue by rankPoints for fair matchmaking
+    this.queue.sort((a, b) => a.rankPoints - b.rankPoints)
+    // If enough players, or queue has waited > 45s, start a match
+    while (this.queue.length >= this.MATCH_SIZE ||
+           (this.queue.length >= 2 && this.queue[0] &&
+            Date.now() - this.queue[0].queuedAt > 45000)) {
+      const size = Math.min(this.queue.length, this.MATCH_SIZE)
+      if (size < 2) break
+      const group = this.queue.splice(0, size)
+      this.createMatch(group)
+    }
+  }
+
+  createMatch(players) {
+    const matchId = 'match_' + Date.now()
+    const maps = ['TERMINAL', 'OVERWATCH']
+    const map  = maps[Math.floor(Math.random() * maps.length)]
+
+    const match = {
+      id: matchId,
+      map,
+      players: players.map((p, i) => ({ ...p, team: i % 2 === 0 ? 'A' : 'B' })),
+      state: 'LOBBY',     // LOBBY → COUNTDOWN → ACTIVE → ENDED
+      scores: { A: 0, B: 0 },
+      killLimit: 30,
+      startTime: null,
+      dbMatchId: null,
+    }
+
+    this.activeMatches.set(matchId, match)
+
+    // Move all players into the match Socket.io room
+    players.forEach(p => {
+      const sock = this.io.sockets.sockets.get(p.socketId)
+      if (sock) sock.join(matchId)
+    })
+
+    // Emit lobby state to all players in the match
+    this.io.to(matchId).emit('match:lobby', {
+      matchId,
+      map,
+      players: match.players.map(p => ({
+        username: p.username,
+        rankPoints: p.rankPoints,
+        team: p.team,
+      })),
+    })
+
+    // 10 second countdown then start
+    let countdown = 10
+    const timer = setInterval(() => {
+      countdown--
+      this.io.to(matchId).emit('match:countdown', { seconds: countdown })
+      if (countdown <= 0) {
+        clearInterval(timer)
+        this.startMatch(matchId)
+      }
+    }, 1000)
+  }
+
+  startMatch(matchId) {
+    const match = this.activeMatches.get(matchId)
+    if (!match) return
+    match.state = 'ACTIVE'
+    match.startTime = Date.now()
+    this.io.to(matchId).emit('match:start', {
+      matchId,
+      map: match.map,
+      players: match.players,
+    })
+  }
+
+  endMatch(matchId, winnerId) {
+    const match = this.activeMatches.get(matchId)
+    if (!match) return
+    match.state = 'ENDED'
+    this.io.to(matchId).emit('match:ended', {
+      matchId,
+      winnerId,
+      scores: match.scores,
+      players: match.players,
+    })
+    // Clean up after 15 seconds
+    setTimeout(() => this.activeMatches.delete(matchId), 15000)
+  }
+
+  isInMatch(socketId) {
+    for (const match of this.activeMatches.values()) {
+      if (match.players.find(p => p.socketId === socketId)) return true
+    }
+    return false
+  }
+
+  getMatchForSocket(socketId) {
+    for (const [id, match] of this.activeMatches.entries()) {
+      if (match.players.find(p => p.socketId === socketId)) return match
+    }
+    return null
+  }
+
+  broadcastQueueSize() {
+    this.io.emit('queue:size', { count: this.queue.length })
+  }
+}
+
+── GameServer.js — wire matchmaker ──
+
+Import and instantiate Matchmaker. Handle these socket events:
+
+  'queue:join'  → matchmaker.joinQueue(socket, { userId, username, rankPoints })
+  'queue:leave' → matchmaker.leaveQueue(socket.id)
+  'disconnect'  → matchmaker.leaveQueue(socket.id)
+
+── public/js/Lobby.js — client lobby UI ──
+
+Handle these client-side socket events:
+
+  'queue:joined'    → show "SEARCHING FOR MATCH..." overlay with animated dots
+                       show queue position number
+  'queue:size'      → update "X players in queue" counter
+  'match:lobby'     → show match lobby screen:
+                       Two team columns (Team A / Team B), each player listed with
+                       username, rank badge, rank points
+                       Map name displayed with a preview image/icon
+  'match:countdown' → show countdown number in center screen, large, pulsing
+  'match:start'     → hide lobby, load the game map, spawn player at team spawn
+
+── public/matchmaking.html ──
+
+Full page UI:
+  Dark background, neon aesthetic
+  Center panel: "FIND MATCH" large button
+  Below: "X PLAYERS IN QUEUE" live counter
+  Player's current rank badge + tier name + RP displayed top-right
+  Recent match history (last 5 matches): map, kills, deaths, result (W/L), RP change
+  "LEADERBOARD" button top-right
+  Animated background: slow-moving neon grid lines
+
+ACCEPTANCE CRITERIA:
+✓ Clicking Find Match puts player in queue and shows searching screen
+✓ When 2+ players are queued, a match is created within 2 seconds
+✓ All queued players receive the lobby screen showing teams
+✓ 10-second countdown plays with each number animated
+✓ Match:start fires and transitions to the game
+✓ Players who disconnect from queue are removed cleanly

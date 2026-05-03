@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEON GRID — Choose Class</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    html, body {
+      min-height: 100vh;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #06060f;
+      overflow-x: hidden;
+    }
+
+    .bg-grid {
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(0,245,255,0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,245,255,0.06) 1px, transparent 1px);
+      background-size: 60px 60px;
+      mask-image: radial-gradient(ellipse 90% 80% at 50% 50%, black 30%, transparent 100%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .page {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2.5rem;
+      padding: 2rem 1rem 3rem;
+      width: 100%;
+      max-width: 1100px;
+    }
+
+    .page-title {
+      font-size: clamp(1.2rem, 4vw, 2rem);
+      font-weight: 900;
+      letter-spacing: 0.25em;
+      color: #00f5ff;
+      text-shadow: 0 0 10px #00f5ff, 0 0 25px #00f5ff80;
+      text-align: center;
+    }
+
+    .cards {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .card {
+      flex: 1;
+      min-width: 240px;
+      max-width: 320px;
+      background: rgba(10, 10, 26, 0.92);
+      border: 1px solid #ffffff15;
+      border-radius: 4px;
+      padding: 1.8rem 1.5rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+      user-select: none;
+    }
+
+    .card:hover {
+      transform: translateY(-6px);
+    }
+
+    .card[data-class="SOLDIER"]:hover { box-shadow: 0 0 24px #00f5ff50; border-color: #00f5ff50; }
+    .card[data-class="GHOST"]:hover   { box-shadow: 0 0 24px #ff2d7850; border-color: #ff2d7850; }
+    .card[data-class="WRAITH"]:hover  { box-shadow: 0 0 24px #7b2fff50; border-color: #7b2fff50; }
+
+    .card.selected[data-class="SOLDIER"] {
+      border-color: #00f5ff;
+      box-shadow: 0 0 30px #00f5ff70, inset 0 0 20px #00f5ff10;
+      animation: pulse-cyan 1.8s ease-in-out infinite;
+    }
+    .card.selected[data-class="GHOST"] {
+      border-color: #ff2d78;
+      box-shadow: 0 0 30px #ff2d7870, inset 0 0 20px #ff2d7810;
+      animation: pulse-pink 1.8s ease-in-out infinite;
+    }
+    .card.selected[data-class="WRAITH"] {
+      border-color: #7b2fff;
+      box-shadow: 0 0 30px #7b2fff70, inset 0 0 20px #7b2fff10;
+      animation: pulse-purp 1.8s ease-in-out infinite;
+    }
+
+    @keyframes pulse-cyan { 0%,100%{box-shadow:0 0 20px #00f5ff50,inset 0 0 10px #00f5ff08} 50%{box-shadow:0 0 40px #00f5ff90,inset 0 0 24px #00f5ff18} }
+    @keyframes pulse-pink { 0%,100%{box-shadow:0 0 20px #ff2d7850,inset 0 0 10px #ff2d7808} 50%{box-shadow:0 0 40px #ff2d7890,inset 0 0 24px #ff2d7818} }
+    @keyframes pulse-purp { 0%,100%{box-shadow:0 0 20px #7b2fff50,inset 0 0 10px #7b2fff08} 50%{box-shadow:0 0 40px #7b2fff90,inset 0 0 24px #7b2fff18} }
+
+    .class-name {
+      font-size: 1.7rem;
+      font-weight: 900;
+      letter-spacing: 0.18em;
+    }
+
+    .weapon-name {
+      font-size: 0.7rem;
+      letter-spacing: 0.3em;
+      color: rgba(200,200,255,0.5);
+      text-transform: uppercase;
+    }
+
+    .class-desc {
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      color: rgba(200,200,255,0.65);
+      line-height: 1.6;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      padding-top: 0.6rem;
+      min-height: 2.8em;
+    }
+
+    .stats { display: flex; flex-direction: column; gap: 0.45rem; margin-top: 0.25rem; }
+
+    .stat-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .stat-label {
+      font-size: 0.58rem;
+      letter-spacing: 0.2em;
+      color: rgba(200,200,255,0.45);
+      width: 4.5em;
+      flex-shrink: 0;
+    }
+
+    .stat-track {
+      flex: 1;
+      height: 5px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .stat-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.4s ease;
+    }
+
+    .select-btn {
+      margin-top: 0.5rem;
+      padding: 0.6rem 1rem;
+      font-size: 0.7rem;
+      letter-spacing: 0.3em;
+      border: 1px solid;
+      background: transparent;
+      border-radius: 2px;
+      cursor: pointer;
+      font-family: 'Orbitron', monospace;
+      transition: background 0.15s, color 0.15s;
+      text-transform: uppercase;
+    }
+
+    .card[data-class="SOLDIER"] .select-btn { color: #00f5ff; border-color: #00f5ff40; }
+    .card[data-class="GHOST"]   .select-btn { color: #ff2d78; border-color: #ff2d7840; }
+    .card[data-class="WRAITH"]  .select-btn { color: #7b2fff; border-color: #7b2fff40; }
+
+    .card[data-class="SOLDIER"] .select-btn:hover { background: #00f5ff15; }
+    .card[data-class="GHOST"]   .select-btn:hover { background: #ff2d7815; }
+    .card[data-class="WRAITH"]  .select-btn:hover { background: #7b2fff15; }
+
+    .card.selected .select-btn { font-weight: 900; }
+
+    .actions {
+      display: flex;
+      gap: 1.2rem;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .confirm-btn {
+      min-width: 200px;
+      padding: 0.85rem 2.5rem;
+      font-size: 0.85rem;
+      letter-spacing: 0.35em;
+      background: #00f5ff;
+      color: #000;
+      border: none;
+      border-radius: 2px;
+      cursor: pointer;
+      font-family: 'Orbitron', monospace;
+      font-weight: 900;
+      text-transform: uppercase;
+      transition: box-shadow 0.15s, transform 0.1s;
+      box-shadow: 0 0 18px #00f5ff60;
+    }
+
+    .confirm-btn:hover {
+      box-shadow: 0 0 30px #00f5ffaa;
+      transform: translateY(-2px);
+    }
+
+    .confirm-btn:disabled {
+      opacity: 0.35;
+      cursor: default;
+      box-shadow: none;
+      transform: none;
+    }
+
+    .back-btn {
+      padding: 0.75rem 1.5rem;
+      font-size: 0.7rem;
+      letter-spacing: 0.3em;
+      background: transparent;
+      color: rgba(200,200,255,0.5);
+      border: 1px solid rgba(200,200,255,0.15);
+      border-radius: 2px;
+      cursor: pointer;
+      font-family: 'Orbitron', monospace;
+      text-transform: uppercase;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .back-btn:hover { color: rgba(200,200,255,0.9); border-color: rgba(200,200,255,0.35); }
+
+    .selected-label {
+      font-size: 0.62rem;
+      letter-spacing: 0.25em;
+      color: rgba(200,200,255,0.35);
+      text-align: center;
+      min-height: 1.2em;
+    }
+
+    .selected-label span { color: #00f5ff; }
+  </style>
+</head>
+<body>
+  <div class="bg-grid" aria-hidden="true"></div>
+
+  <div class="page">
+    <h1 class="page-title">CHOOSE YOUR CLASS — OPERATIVE</h1>
+
+    <div class="cards" id="cards"></div>
+
+    <p class="selected-label" id="selected-label">Select a class to continue</p>
+
+    <div class="actions">
+      <button class="back-btn" id="back-btn">◀ BACK</button>
+      <button class="confirm-btn" id="confirm-btn" disabled>CONFIRM CLASS</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { CLASSES } from '/js/Classes.js';
+
+    const MAX_HP     = Math.max(...Object.values(CLASSES).map(c => c.hp));
+    const MAX_SPEED  = Math.max(...Object.values(CLASSES).map(c => c.speed));
+    const MAX_DMG    = Math.max(...Object.values(CLASSES).map(c => c.damage));
+    const MAX_RATE   = Math.max(...Object.values(CLASSES).map(c => 1000 / c.fireRate));
+
+    let selected = localStorage.getItem('ng_class') || null;
+
+    // Preserve ?code= param from the URL through navigation
+    const _lobbyCode = new URLSearchParams(location.search).get('code') || '';
+
+    function navigate(url) {
+      document.body.classList.add('page-exit');
+      setTimeout(() => { window.location.href = url; }, 280);
+    }
+    function navigateGame() {
+      const dest = _lobbyCode ? `/game.html?code=${_lobbyCode}` : '/game.html';
+      navigate(dest);
+    }
+
+    function pct(val, max) { return Math.round(val / max * 100); }
+
+    function buildCard(key) {
+      const cls  = CLASSES[key];
+      const col  = cls.color;
+      const rate = Math.round((1000 / cls.fireRate) / MAX_RATE * 100);
+
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.dataset.class = key;
+
+      card.innerHTML = `
+        <div class="class-name" style="color:${col};text-shadow:0 0 12px ${col}80">${cls.name}</div>
+        <div class="weapon-name">${cls.weapon}</div>
+        <div class="class-desc">${cls.description}</div>
+        <div class="stats">
+          ${statRow('HP',        pct(cls.hp,     MAX_HP),    col)}
+          ${statRow('SPEED',     pct(cls.speed,  MAX_SPEED), col)}
+          ${statRow('DAMAGE',    pct(cls.damage, MAX_DMG),   col)}
+          ${statRow('FIRE RATE', rate,                       col)}
+        </div>
+        <button class="select-btn" data-class="${key}">SELECT</button>
+      `;
+
+      card.addEventListener('click', () => selectClass(key));
+      card.querySelector('.select-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectClass(key);
+      });
+
+      return card;
+    }
+
+    function statRow(label, pct, color) {
+      return `
+        <div class="stat-row">
+          <span class="stat-label">${label}</span>
+          <div class="stat-track">
+            <div class="stat-fill" style="width:${pct}%;background:${color};box-shadow:0 0 6px ${color}60"></div>
+          </div>
+        </div>
+      `;
+    }
+
+    function selectClass(key) {
+      selected = key;
+      document.querySelectorAll('.card').forEach(c => c.classList.toggle('selected', c.dataset.class === key));
+      document.getElementById('confirm-btn').disabled = false;
+
+      const cls = CLASSES[key];
+      const label = document.getElementById('selected-label');
+      label.innerHTML = `Selected: <span>${cls.name}</span> — ${cls.weapon} · ${cls.hp} HP · Speed ${cls.speed}`;
+    }
+
+    const container = document.getElementById('cards');
+    // WRAITH (sniper) is the only available class
+    Object.keys(CLASSES).forEach(key => {
+      const card = buildCard(key);
+      if (key !== 'WRAITH') {
+        card.style.opacity = '0.28';
+        card.style.filter  = 'grayscale(1)';
+        card.style.cursor  = 'not-allowed';
+        card.style.pointerEvents = 'none';
+        const btn = card.querySelector('.select-btn');
+        if (btn) { btn.textContent = 'LOCKED'; btn.disabled = true; btn.style.opacity = '0.4'; }
+      }
+      container.appendChild(card);
+    });
+
+    selectClass('WRAITH');
+
+    document.getElementById('confirm-btn').addEventListener('click', () => {
+      if (!selected) return;
+      localStorage.setItem('ng_class', selected);
+      navigateGame();
+    });
+
+    document.getElementById('back-btn').addEventListener('click', () => {
+      navigate('/index.html');
+    });
+  </script>
+</body>
+</html>

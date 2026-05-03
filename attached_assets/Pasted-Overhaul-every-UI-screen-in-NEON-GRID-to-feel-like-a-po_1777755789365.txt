@@ -1,0 +1,125 @@
+Overhaul every UI screen in NEON GRID to feel like a polished AAA FPS.
+Professional, dark, neon-accented, snappy animations, zero placeholder UI.
+
+── MAIN MENU — public/index.html ──
+
+Background: animated 3D scene (Three.js) — slow rotating view of TERMINAL map
+  with neon lighting, no players, just ambient beauty. Camera slowly orbits.
+  Rendered in a canvas behind the UI.
+
+UI layer on top:
+  Top-left: "NEON GRID" logo — large, bold, with animated cyan glow pulse
+  Top-right: Player username + rank badge + RP counter | SETTINGS icon
+  
+  Center navigation (vertical stack of buttons):
+    [ PLAY ]           → matchmaking.html
+    [ LEADERBOARD ]    → leaderboard.html
+    [ PROFILE ]        → profile.html
+    [ SETTINGS ]       → opens settings modal
+    [ LOG OUT ]
+
+  Bottom-left: small text — server status dot (green = online, red = offline)
+                            "X PLAYERS ONLINE" pulling from GET /api/status
+  
+  Button style:
+    All uppercase, Orbitron font, letter-spacing 4px
+    Default: transparent background, 1px solid rgba(0,245,255,0.3), color #e0e0ff
+    Hover: slide-in cyan fill from left, text turns dark, box-shadow glow
+    Active: scale 0.97
+
+── SETTINGS MODAL ──
+
+Dark overlay panel, slide in from right:
+  AUDIO section:
+    Master volume: slider 0-100
+    Effects volume: slider 0-100
+    Footsteps volume: slider 0-100
+  
+  CONTROLS section:
+    Mouse sensitivity: slider 0.5–3.0, updates in real-time
+    ADS sensitivity multiplier: slider 0.3–1.0
+    Toggle ADS / Hold ADS: toggle switch
+    Invert Y: toggle
+
+  VIDEO section:
+    FOV: slider 65–90
+    Show FPS: toggle
+    Motion blur: toggle (CSS filter on canvas)
+  
+  All settings saved to localStorage on change.
+
+── IN-GAME HUD ──
+
+Redesign to feel like a CoD/Warzone HUD:
+
+  BOTTOM-LEFT:
+    Health bar — NOT a simple fill bar.
+    Show HP as segmented blocks: 10 blocks total, each = 10 HP
+    Full blocks: bright class color. Empty blocks: dark. Broken blocks: flicker
+    HP number above bar: large font, white
+    "AWP" weapon name below bar, small
+
+  BOTTOM-RIGHT:
+    Ammo: "5 | 25" — current mag | reserve
+    Large for mag, small for reserve
+    "RELOADING" pulsing text + progress arc when reloading
+
+  TOP-CENTER:
+    Match timer: "12:43" counting down from match time limit
+    Score: "TEAM A  14 — 12  TEAM B" with your team highlighted
+
+  TOP-LEFT:
+    Your rank badge (small) + username
+    K/D for this match: "K: 4  D: 2"
+
+  CENTER (temporary notifications, fade in/out):
+    Kill feed (top-right)
+    Announcements (center)
+    "+100 RP" or "+28 RP" floating up when earning points
+    Damage numbers: red numbers floating up from hit players (client-side only)
+
+  CROSSHAIR:
+    Default: 4-line cross with 8px center gap, 1px thick, rgba(255,255,255,0.75)
+    ADS: completely hidden (scope overlay takes over)
+    Hit: flash red/orange and spread 1.4x then snap back
+    Headshot: flash yellow, show skull for 300ms
+
+── LOADING SCREEN ──
+
+Between matchmaking and game start:
+  Full dark screen
+  NEON GRID logo center, glowing pulse
+  Loading bar: thin 1px line that fills from left to right
+  Status text cycling: "LOADING MAP..." → "CONNECTING..." → "SPAWNING..." → "GO!"
+  Tips at bottom: random gameplay tips per map
+
+── DEATH SCREEN ──
+
+When killed:
+  Screen goes dark grayscale (CSS filter: grayscale + blur 2px)
+  Top-center: "ELIMINATED" in large red neon text, flicker animation
+  Below: "KILLED BY [username]" with their rank badge
+  Below: "RESPAWNING IN 3... 2... 1..."
+  Right panel: brief kill cam (simplified: show the killer's last known position as a marker on minimap)
+  Input disabled during death screen
+
+── RANK BADGE COMPONENT ──
+
+Used everywhere (leaderboard, HUD, post-match, profile):
+  Create a function renderRankBadge(tier, division, size='sm') returning an HTML element:
+    Background: dark, border color = tier color
+    Tier icon: first letter of tier + division number (e.g. "G2" for Gold 2)
+    Small crown icon for MASTER and GRANDMASTER
+    Pulsing glow animation for DIAMOND+ tiers
+
+ACCEPTANCE CRITERIA:
+✓ Main menu has animated 3D background
+✓ All buttons have smooth hover animations
+✓ Settings modal opens and all settings save to localStorage and apply in real-time
+✓ HUD health bar is segmented and updates smoothly on damage
+✓ Match timer counts down and shows team scores
+✓ Death screen goes grayscale and shows killer info
+✓ Rank badges render consistently across all pages
+✓ Loading screen transitions cleanly into the game
+✓ All fonts are Orbitron (loaded from Google Fonts)
+✓ All UI is fully responsive — no text or elements clipping outside the viewport

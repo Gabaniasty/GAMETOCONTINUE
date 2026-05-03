@@ -1,0 +1,63 @@
+Implement the full combat system for NEON GRID — shooting, hit detection, health, death, and respawn.
+
+**Server-side hit detection — update src/game/GameServer.js:**
+
+Handle the 'player:shoot' event with raycasting:
+
+- Input: { origin: {x,y,z}, direction: {x,y,z}, weaponClass }
+
+- For each other player, compute if the ray intersects a sphere of radius 0.7 centered at their position
+
+- Use the ray-sphere intersection formula
+
+- If hit: apply damage based on class weapon (SOLDIER: 25, GHOST: 15, WRAITH: 90)
+
+- Emit 'player:hit' to the shooter: { targetId, damage, newHp }
+
+- Emit 'player:damaged' to the target: { shooterId, damage, newHp }
+
+- If target HP <= 0:
+
+  - Emit 'player:killed' to all: { killerId, killerName, victimId, victimName }
+
+  - Increment killer's kills, victim's deaths
+
+  - After 3 seconds, respawn victim at a random spawn point with full HP
+
+  - Emit 'player:respawned': { id, x, y, z, hp }
+
+**Client-side shooting — update Controls.js:**
+
+- On left click (while pointer locked): call a shoot() callback
+
+- shoot() should: create a ray from camera position in camera direction, emit to server via Network
+
+**Client-side feedback — create public/js/Hud.js:**
+
+Create a Hud class that manages the in-game overlay:
+
+- Health bar: bottom-left, neon pink fill, dark background, shows "HP: 100"
+
+- Kill feed: top-right, shows last 5 kill messages like "[GHOST_42] fragged [SOLDIER_11]", fades after 5s
+
+- Crosshair: centered + symbol in neon cyan, with hit-flash animation (turns pink on hit)
+
+- Kill notification: center-screen "+100 XP  KILL" flash when you get a kill, fades in 2s
+
+- Respawn screen: when dead, show "YOU DIED" in red with "Respawning in 3..." countdown, darken screen
+
+**Weapon visual effects — update Game.js:**
+
+- On shoot: create a brief LineSegments (raytrace line) from gun barrel in shoot direction, neon cyan color, disappears after 80ms
+
+- On hit: create a particle burst (8 small SphereGeometry meshes) at hit location, pink/cyan colors, fly outward and fade over 300ms
+
+- Muzzle flash: brief PointLight at camera+forward position, cyan, disappears after 80ms
+
+**Wire everything in main.js:**
+
+- Pass Hud instance to Network for event callbacks
+
+- Network listens to player:hit, player:killed, player:damaged, player:respawned and updates HUD
+
+Test: shoot at remote player mesh in second tab, verify damage registers and kill feed appears.

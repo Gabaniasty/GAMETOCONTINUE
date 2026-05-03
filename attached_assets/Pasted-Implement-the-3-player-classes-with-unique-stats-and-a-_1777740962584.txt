@@ -1,0 +1,113 @@
+Implement the 3 player classes with unique stats and a class selection screen.
+
+Class definitions — create public/js/Classes.js (shared data, also require in server):
+
+const CLASSES = {
+
+  SOLDIER: {
+
+    name: "SOLDIER",
+
+    hp: 100,
+
+    speed: 8,
+
+    weapon: "Pulse Rifle",
+
+    damage: 25,
+
+    fireRate: 200,      // ms between shots
+
+    bulletColor: 0x00f5ff,
+
+    description: "Balanced fighter. Reliable in any situation.",
+
+    color: "#00f5ff"
+
+  },
+
+  GHOST: {
+
+    name: "GHOST",
+
+    hp: 75,
+
+    speed: 12,
+
+    weapon: "Volt SMG",
+
+    damage: 15,
+
+    fireRate: 80,
+
+    bulletColor: 0xff2d78,
+
+    description: "Fragile but lethal. Built to flank and overwhelm.",
+
+    color: "#ff2d78"
+
+  },
+
+  WRAITH: {
+
+    name: "WRAITH",
+
+    hp: 125,
+
+    speed: 5,
+
+    weapon: "Ion Sniper",
+
+    damage: 90,
+
+    fireRate: 1500,
+
+    bulletColor: 0x7b2fff,
+
+    description: "Patient. One shot, one kill. Punishes mistakes.",
+
+    color: "#7b2fff"
+
+  }
+
+};
+
+Class selection screen — create public/class-select.html:
+
+Full-screen class picker shown before entering the game:
+
+Title: "CHOOSE YOUR CLASS — OPERATIVE"
+3 cards side by side, one per class:
+Class name (large, class color)
+Weapon name
+Description
+Stat bars: HP, SPEED, DAMAGE, FIRE RATE (4 bars, filled proportionally, class color)
+"SELECT" button
+Hover: card lifts with box-shadow glow in class color
+Selected card: glowing border, pulsing animation
+"CONFIRM" button at bottom: saves chosen class to localStorage, redirects to game.html
+Back button to index.html
+
+Apply class stats in game:
+
+Update Controls.js:
+
+Read playerClass from localStorage (default 'SOLDIER')
+Use CLASSES[playerClass].speed as movement speed
+Use CLASSES[playerClass].fireRate as minimum ms between shots (track lastShotTime)
+
+Update GameServer.js:
+
+On player join, read class from player data
+Use CLASSES[class].hp as starting HP
+Use CLASSES[class].damage for hit calculation (instead of hardcoded values)
+
+Update Game.js player mesh colors:
+
+Use CLASSES[class].color to set mesh emissive color for remote players
+
+Update index.html:
+
+"PLAY NOW" → goes to class-select.html (not directly game.html)
+
+Test: select each class, verify speed/HP differences feel distinct in-game.

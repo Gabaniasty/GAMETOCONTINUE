@@ -1,0 +1,92 @@
+Add user accounts, registration, and login to NEON GRID using SQLite and JWT.
+
+**Database — create src/db/Database.js:**
+
+Use better-sqlite3 to create/connect to db/neon_grid.sqlite.
+
+Create these tables on startup if they don't exist:
+
+```sql
+
+CREATE TABLE IF NOT EXISTS users (
+
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+  username TEXT UNIQUE NOT NULL,
+
+  password_hash TEXT NOT NULL,
+
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+
+);
+
+CREATE TABLE IF NOT EXISTS stats (
+
+  user_id INTEGER PRIMARY KEY,
+
+  kills INTEGER DEFAULT 0,
+
+  deaths INTEGER DEFAULT 0,
+
+  xp INTEGER DEFAULT 0,
+
+  level INTEGER DEFAULT 1,
+
+  FOREIGN KEY (user_id) REFERENCES users(id)
+
+);
+
+Export methods: createUser(username, passwordHash), getUserByUsername(username), getUserById(id), getStats(userId), updateStats(userId, killsDelta, deathsDelta, xpDelta).
+
+Auth routes — create src/auth/AuthRouter.js:
+
+Express Router with:
+
+POST /api/auth/register:
+
+Validate: username 3-20 chars alphanumeric+underscore, password 6+ chars
+Check username not taken
+Hash password with bcrypt (saltRounds: 10)
+Create user + stats row
+Return JWT: { token, username, userId }
+
+POST /api/auth/login:
+
+Find user by username
+Compare password with bcrypt
+Return JWT: { token, username, userId }
+
+GET /api/auth/me (requires auth middleware):
+
+Decode JWT from Authorization header
+Return { username, stats }
+
+Create auth middleware (verifyToken) that reads Bearer token from Authorization header.
+
+Mount router in server.js: app.use('/api', AuthRouter).
+
+Client-side auth — create public/js/Auth.js:
+
+Create an Auth class that:
+
+Checks localStorage for 'neon_token' and 'neon_user' on load
+If not found: shows login/register modal
+Register form: username + password → POST /api/auth/register → store token + username in localStorage
+Login form: username + password → POST /api/auth/login → store token + username
+Logout: clears localStorage
+Exports isLoggedIn(), getToken(), getUsername()
+
+Update index.html:
+
+"PLAY NOW" button → checks if logged in. If yes: redirect to game.html. If no: show auth modal.
+Show logged-in username + "LOGOUT" button if authenticated
+Style the modal with neon cyberpunk aesthetic (dark bg, neon border, glowing inputs)
+
+Update GameServer.js:
+
+On 'player:join', accept { token } and verify JWT to get real username and userId
+Store userId in player state
+On kill: call Database.updateStats(killerId, +1 kill, +0, +100 xp) and Database.updateStats(victimId, +0, +1 death, +0)
+Recalculate level: floor(sqrt(totalXP / 100))
+
+Test: register two accounts, log in, play, verify kills are saved to DB between sessions.

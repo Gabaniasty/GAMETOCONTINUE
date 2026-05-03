@@ -1,0 +1,179 @@
+Integrate fully animated 3D character models into NEON GRID.
+Other players must visibly run, idle, shoot, and die with real animations.
+Use Mixamo GLB models loaded via GLTFLoader with AnimationMixer.
+
+── STEP 1: GET FREE ANIMATED CHARACTER ──
+
+Download a free animated character from Mixamo (mixamo.com — free with Adobe account):
+  1. Go to mixamo.com, pick any humanoid character (e.g. "Y Bot" or "X Bot")
+  2. Download as FBX with skin
+  3. Download these animations separately (FBX without skin):
+       - Idle (standing)
+       - Walking
+       - Running (fast)
+       - Jump
+       - Death (falling back)
+       - Rifle Aiming Idle (for ADS)
+       - Firing Rifle (shoot)
+  4. Use an online FBX→GLB converter (e.g. https://products.aspose.app/3d/conversion/fbx-to-glb)
+     to convert character + all animations to GLB format
+  5. Use https://github.com/nicktindall/mixamo-anim-downloader or manually combine
+     animations into one GLB using the Three.js editor at https://threejs.org/editor/
+
+If Mixamo is not accessible, use Quaternius free animated character pack:
+  URL: https://quaternius.com/packs/ultimatecharacters.html  (CC0 license)
+  Download the GLB with included walk/run/idle/death animations.
+
+Place the final file at: public/assets/characters/soldier.glb
+It must contain the character mesh PLUS all animations embedded.
+
+── public/js/CharacterController.js ──
+
+class CharacterController {
+  constructor(scene, modelPath) {
+    this.scene = scene
+    this.mixer = null
+    this.model = null
+    this.animations = {}
+    this.currentAnim = null
+    this.modelPath = modelPath
+    this.loaded = false
+  }
+
+  async load() {
+    return new Promise((resolve) => {
+      const loader = new THREE.GLTFLoader()
+      loader.load(this.modelPath, (gltf) => {
+        this.model = gltf.scene
+
+        // Scale to match game units (Mixamo models are huge by default)
+        this.model.scale.setScalar(0.011)
+
+        // Apply cyberpunk material tint
+        this.model.traverse(child => {
+          if (child.isMesh) {
+            child.castShadow = true
+            child.material.emissive = new THREE.Color(0x001133)
+            child.material.emissiveIntensity = 0.2
+          }
+        })
+
+        this.scene.add(this.model)
+
+        // Set up AnimationMixer
+        this.mixer = new THREE.AnimationMixer(this.model)
+
+        // Map animation clips by name
+        gltf.animations.forEach(clip => {
+          this.animations[clip.name.toLowerCase()] = this.mixer.clipAction(clip)
+        })
+
+        this.loaded = true
+        this.playAnimation('idle')
+        resolve(this)
+      })
+    })
+  }
+
+  playAnimation(name, options = {}) {
+    const { loop = true, timeScale = 1, fadeTime = 0.2 } = options
+
+    // Find the right clip (fuzzy match)
+    const keys = Object.keys(this.animations)
+    const key = keys.find(k => k.includes(name)) || keys[0]
+    if (!key) return
+
+    const next = this.animations[key]
+    if (next === this.currentAnim) return
+
+    next.reset()
+    next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity)
+    next.timeScale = timeScale
+    next.clampWhenFinished = !loop
+    next.play()
+
+    if (this.currentAnim) this.currentAnim.crossFadeTo(next, fadeTime, true)
+
+    this.currentAnim = next
+  }
+
+  update(delta) {
+    if (this.mixer) this.mixer.update(delta)
+  }
+
+  setPosition(x, y, z) {
+    if (this.model) this.model.position.set(x, y - 1.65, z)
+  }
+
+  setRotation(rotY) {
+    if (this.model) this.model.rotation.y = rotY + Math.PI
+  }
+
+  updateState(velocity, isShooting, isDead, isADS) {
+    if (!this.loaded) return
+    const speed = Math.sqrt(velocity.x ** 2 + velocity.z ** 2)
+    if (isDead) {
+      this.playAnimation('death', { loop: false })
+    } else if (isShooting) {
+      this.playAnimation('firing', { loop: false, fadeTime: 0.05 })
+    } else if (isADS) {
+      this.playAnimation('aiming idle')
+    } else if (speed > 6) {
+      this.playAnimation('running', { timeScale: 1.1 })
+    } else if (speed > 0.5) {
+      this.playAnimation('walking')
+    } else {
+      this.playAnimation('idle')
+    }
+  }
+
+  dispose() {
+    this.scene.remove(this.model)
+    this.mixer.stopAllAction()
+  }
+}
+
+── Game.js — integrate animated remote players ──
+
+Replace all existing remote player mesh code with CharacterController instances.
+Store a Map: remoteControllers = new Map()  // socketId → CharacterController
+
+On 'player:joined' or first appearance in game:state:
+  const ctrl = new CharacterController(scene, '/assets/characters/soldier.glb')
+  await ctrl.load()
+  remoteControllers.set(playerId, ctrl)
+
+Each frame — updateRemotePlayers(players, delta):
+  players.forEach(p => {
+    const ctrl = remoteControllers.get(p.id)
+    if (!ctrl) return
+    ctrl.setPosition(p.x, p.y, p.z)
+    ctrl.setRotation(p.rotY)
+    ctrl.update(delta)
+    ctrl.updateState(p.velocity, p.isShooting, !p.alive, p.isADS)
+  })
+
+On player death:
+  ctrl.playAnimation('death', { loop: false })
+  setTimeout(() => ctrl.dispose(), 3000)
+
+On player remove:
+  ctrl.dispose()
+  remoteControllers.delete(playerId)
+
+── SERVER — send animation state ──
+
+In GameServer.js, add to each player state object:
+  isShooting: false    (true for 200ms after a shot)
+  isADS: false         (true while right-click held)
+  velocity: { x, y, z }
+
+Include these in the game state broadcast so clients can drive animations.
+
+ACCEPTANCE CRITERIA:
+✓ Remote players are visible as real humanoid characters, not boxes
+✓ Characters visibly run when moving, idle when still
+✓ Characters play a shooting animation when they fire
+✓ Death animation plays when a player is killed (falls back)
+✓ Animations transition smoothly — no snapping between states
+✓ Multiple remote players can each have independent animation states

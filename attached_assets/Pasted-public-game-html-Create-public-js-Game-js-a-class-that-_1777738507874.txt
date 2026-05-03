@@ -1,0 +1,75 @@
+public/game.html.
+
+Create **public/js/Game.js** — a class that manages the Three.js scene:
+
+**Scene setup:**
+
+- Renderer: WebGLRenderer attached to #gameCanvas, full window size, shadows enabled
+
+- Background color: 0x0a0a0f
+
+- Fog: THREE.FogExp2(0x0a0a0f, 0.05) for atmosphere
+
+- Camera: PerspectiveCamera, FOV 75, positioned at y=1.6 (eye height)
+
+- Ambient light: 0x111133 (dim blue-tint)
+
+- Point lights: 3 neon-colored point lights placed around the map (cyan 0x00f5ff, pink 0xff2d78, purple 0x7b2fff) with intensity 2, distance 30
+
+**Map — "GRID ZERO":**
+
+Build the map using Three.js geometry:
+
+- Floor: PlaneGeometry(80, 80), rotated flat, MeshStandardMaterial color 0x111122, with a grid texture (use a custom shader or GridHelper overlay at y=0.01)
+
+- GridHelper(80, 80, 0x00f5ff, 0x003344) placed at y=0.01
+
+- 4 outer walls (BoxGeometry), 80 units long, 4 units tall, 1 unit thick, color 0x0d0d22 with emissive 0x00f5ff at low intensity (0.1) so edges glow
+
+- 8 cover boxes scattered around the map: BoxGeometry(3,2,3), color 0x1a0033, emissive 0xff2d78 at 0.05
+
+- 4 corner pillars: BoxGeometry(2,6,2), color 0x0d0d22, emissive 0x7b2fff at 0.1
+
+**Controls — public/js/Controls.js:**
+
+Create a Controls class:
+
+- PointerLock: clicking the canvas locks the pointer; pressing Escape unlocks
+
+- When locked: mouse movement rotates the camera (yaw/pitch), clamp pitch to ±85 degrees
+
+- WASD / Arrow keys: track which keys are pressed
+
+- Shift: sprint (1.5x speed)
+
+- Left click: fires (for now just console.log("SHOOT"))
+
+- Space: jump (apply upward velocity, gravity brings back down)
+
+- Export a getMovementVector() method that returns {x, z} based on WASD input
+
+- Show a crosshair div (#crosshair) centered on screen when pointer is locked; hide when unlocked
+
+- Show a "CLICK TO PLAY" overlay when pointer is not locked
+
+**Game loop:**
+
+- requestAnimationFrame loop in Game.js
+
+- Move the camera based on Controls.getMovementVector() at speed 8 units/sec
+
+- Apply simple gravity (y velocity, floor at y=1.6)
+
+- Simple AABB collision with map walls (don't let player walk through them)
+
+- Window resize handler
+
+**Update main.js** to:
+
+- Import Game and Controls
+
+- Create instances and start the loop
+
+- game.html should load and show a navigable 3D neon arena
+
+Test: open game.html, click to lock pointer, walk around with WASD, verify collision with walls works.

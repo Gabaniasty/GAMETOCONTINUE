@@ -1,0 +1,102 @@
+Build the second map called "OVERWATCH" — an outdoor rooftop environment
+with long sightlines perfect for AWP duels, elevated positions, and
+multiple levels connected by staircases and ziplines.
+
+── OVERWATCH LAYOUT (100x100 units, outdoor) ──
+
+  Multi-level rooftop district. Exposed to a cyberpunk city skyline.
+  3 elevation levels: Ground (y=0), Mid (y=5), High (y=12)
+
+  Ground: open plaza with concrete barriers, 2 building entrances
+  Mid: connected rooftops with AC units, vents, cover boxes
+  High: 2 sniper nests, 1 center antenna tower
+
+── Create public/js/maps/OverwatchMap.js ──
+
+── SKY & ENVIRONMENT ──
+  Skybox: large sphere inside-out, canvas texture:
+    Gradient: deep purple-black at top → dark blue at horizon
+    City silhouette: irregular skyline of buildings drawn in dark navy at bottom 20% of canvas
+    ~300 white pixel stars at random positions
+    3 bright "neon billboard" rectangles on distant buildings (glowing pink/cyan rectangles)
+    Flying vehicle lights: 4 tiny white dots moving slowly across canvas (animated)
+  scene.fog = FogExp2(0x050510, 0.018) — lighter fog for outdoor depth
+  Ambient: AmbientLight(0x0a0820, 1.0) — slight purple night sky
+
+── GROUND LEVEL ──
+  Main floor: PlaneGeometry(100,100) matFloor
+  Central plaza: hexagonal floor texture 40x40 at center, matPlaza
+
+  Concrete barriers (long cover walls):
+    8 x BoxGeometry(8, 1.4, 0.8) scattered at ground level in plus pattern around center
+    matWall, emissive cyan top-edge trim
+  
+  2 ground-level buildings (enterable):
+    West building: [20, 12, 16] at (-35, 6, 0) matWall
+      Interior: hollow box, entry doors north/south side
+      Ground floor room: 16x12 with 4 cover crates inside
+      Staircase to rooftop: ramp [4, 0.4, 12] rising from y=0 to y=12 inside east wall
+    East building: [20, 12, 16] at (+35, 6, 0) matWall
+      Mirror layout of West building
+
+  North spawn zone: 5 points z=-45
+  South spawn zone: 5 points z=+45
+
+── MID LEVEL (rooftops y=12) ──
+  West rooftop slab:  [20, 0.5, 16] at (-35, 12.25, 0) matRoof
+  East rooftop slab:  [20, 0.5, 16] at (+35, 12.25, 0) matRoof
+
+  Rooftop details (on each rooftop):
+    AC units: 3 x BoxGeometry(2.5, 1.8, 2.5) matWall, emissive pink vent strips
+    Ventilation pipes: 2 x CylinderGeometry(0.4, 0.4, 2, 8) matWall with glow tops
+    Satellite dish: CylinderGeometry(1.5, 0.1, 0.3, 16) matGlowCyan + thin pole
+    Low walls around rooftop edge: [length, 0.9, 0.3] matWall with cyan top trim
+
+  Center bridge (crosses between rooftops at y=12):
+    [40, 0.5, 6] at (0, 12.25, 0) matFloor
+    2 railing strips each side, matGlowPurp
+    3 support arches below: each a BoxGeometry [0.4, 4, 6] dropping to y=8
+
+  North catwalk connecting to building rooftops:
+    [6, 0.4, 20] at (-35, 12.25, -25) — extends rooftop toward north spawn
+    [6, 0.4, 20] at (+35, 12.25, -25) — east side
+  South catwalks mirrored
+
+── HIGH LEVEL — SNIPER NESTS (y=20) ──
+  NW nest: [10, 0.5, 10] at (-40, 20, -35) matRoof
+    3-sided walls [10, 2.5, 0.5] — open toward map center for sightline
+    Sandbags (visual): 3 x BoxGeometry(2, 0.7, 1.2) stacked slightly offset, matWall
+    PointLight pink intensity 2 distance 10
+    Ladder: trigger at building corner teleports player from rooftop to nest
+
+  SE nest: [10, 0.5, 10] at (+40, 20, +35) matRoof
+    Mirror layout, cyan accent
+
+  Center antenna tower at (0, 0, 0):
+    Base: BoxGeometry(3, 3, 3) at y=1.5, matWall
+    Tower shaft: BoxGeometry(1, 18, 1) at y=10, matWall
+    Cross beams: 3 x BoxGeometry(6, 0.2, 0.2) at y=4, 9, 14, matGlowCyan
+    Blinking red light: PointLight(0xff0000, 3, 4) at y=20, blinks every 1.2s
+    Antenna: CylinderGeometry(0.05, 0.05, 4, 6) at y=22, matGlowPink
+
+── LIGHTING ──
+  Ambient: AmbientLight(0x080818, 0.9)
+  Street lights: 8 x PointLight(0xaaaaff, 2, 18) on tall poles (BoxGeometry pole + light at top)
+    placed evenly around the ground plaza
+  Rooftop: PointLight(0x00f5ff, 2.5, 20) and PointLight(0xff2d78, 2.5, 20) on each rooftop
+  Bridge: PointLight(0x7b2fff, 2, 12) below center of bridge
+  Nest lights: PointLight(0xff2d78, 2, 8) in each sniper nest
+  City glow: HemisphereLight(0xff2d78, 0x000008, 0.4) — pink sky, dark ground
+  Flying vehicle lights: 4 THREE.PointLight(0xffffff, 1, 3) attached to invisible moving objects
+    each follows a random curved path high in the sky, speed 5 units/s
+
+ACCEPTANCE CRITERIA:
+✓ City skyline and stars are visible in the background
+✓ Both ground-level buildings are enterable
+✓ Rooftops are accessible via staircases inside buildings
+✓ Center bridge connects east and west rooftops
+✓ Sniper nests are accessible via ladders from rooftops
+✓ Antenna tower is a visible landmark from all parts of the map
+✓ Flying vehicle lights drift slowly across the sky
+✓ Long sightlines exist across the bridge and ground plaza (good for AWP)
+✓ All collision works — players cannot fall through floors or through buildings

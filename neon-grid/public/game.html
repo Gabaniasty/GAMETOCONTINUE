@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEON GRID — Play</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    #gameCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: none;
+    }
+
+    /* ── Loading screen ── */
+    #loadingScreen {
+      position: fixed;
+      inset: 0;
+      background: #02020a;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Orbitron', sans-serif;
+      color: #00f5ff;
+    }
+
+    #loadingTitle {
+      font-size: 2.5rem;
+      letter-spacing: 0.35em;
+      font-weight: 900;
+      text-shadow: 0 0 14px #00f5ff, 0 0 28px #00f5ff;
+      margin-bottom: 1.8rem;
+      animation: loadPulse 1.8s ease-in-out infinite;
+    }
+
+    @keyframes loadPulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.55; }
+    }
+
+    #loadingStatus {
+      font-size: 0.7rem;
+      letter-spacing: 0.32em;
+      color: #00f5ff;
+      margin-bottom: 1rem;
+      min-height: 1.2em;
+      text-shadow: 0 0 8px #00f5ff;
+    }
+
+    #loadingText {
+      font-size: 0.7rem;
+      letter-spacing: 0.18em;
+      color: rgba(170, 170, 255, 0.55);
+      margin-bottom: 1.1rem;
+    }
+
+    /* 1px fill bar */
+    #loadingBar {
+      width: 100%;
+      max-width: 420px;
+      height: 1px;
+      background: rgba(0, 245, 255, 0.15);
+    }
+
+    #loadingFill {
+      height: 100%;
+      width: 0%;
+      background: #00f5ff;
+      box-shadow: 0 0 8px #00f5ff, 0 0 16px rgba(0,245,255,0.4);
+      transition: width 0.25s ease;
+    }
+
+    #loading-tip {
+      position: absolute;
+      bottom: 2.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Orbitron', sans-serif;
+      font-size: 0.52rem;
+      letter-spacing: 0.2em;
+      color: rgba(224, 224, 255, 0.28);
+      text-align: center;
+      max-width: 520px;
+      width: 90%;
+    }
+    #loading-tip::before {
+      content: 'TIP: ';
+      color: rgba(0, 245, 255, 0.4);
+    }
+
+    /* ── Pointer-lock overlay ── */
+    #lock-overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(10, 10, 15, 0.85);
+      z-index: 100;
+      gap: 1rem;
+    }
+
+    #lock-overlay h2 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(1.2rem, 4vw, 2rem);
+      font-weight: 900;
+      color: #00f5ff;
+      letter-spacing: 0.2em;
+      text-shadow: 0 0 10px #00f5ff, 0 0 20px #00f5ff;
+      animation: blink 1.6s ease-in-out infinite;
+    }
+
+    #lock-overlay p {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 0.7rem;
+      letter-spacing: 0.25em;
+      color: rgba(224, 224, 255, 0.4);
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.35; }
+    }
+
+    /* ── Scope overlay (WRAITH) ── */
+    #scope-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      pointer-events: none;
+    }
+
+    /* Hide crosshair when scoped */
+    #scope-overlay[style*="block"] ~ #crosshair,
+    #scope-overlay[style*="flex"]  ~ #crosshair {
+      opacity: 0 !important;
+    }
+
+    #scope-bg {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(
+        circle at 50% 50%,
+        transparent 184px,
+        rgba(2, 2, 10, 0.55) 189px,
+        rgba(2, 2, 10, 0.97) 200px
+      );
+    }
+
+    #scope-ring {
+      position: absolute;
+      width: 382px;
+      height: 382px;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      border: 2px solid rgba(123, 47, 255, 0.75);
+      box-shadow: 0 0 22px rgba(123, 47, 255, 0.4),
+                  inset 0 0 22px rgba(123, 47, 255, 0.07);
+    }
+
+    #scope-reticle {
+      position: absolute;
+      width: 380px;
+      height: 380px;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    #scope-reticle.scope-kick {
+      animation: scope-kick 0.24s ease-out forwards;
+    }
+
+    @keyframes scope-kick {
+      0%   { transform: translate(-50%, -50%) translateY(0)   rotate(0deg);    }
+      18%  { transform: translate(-50%, -50%) translateY(-7px) rotate(2.2deg); }
+      100% { transform: translate(-50%, -50%) translateY(0)   rotate(0deg);    }
+    }
+
+    #scope-lens-glare {
+      position: absolute;
+      width: 380px;
+      height: 380px;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      background: radial-gradient(
+        ellipse 55% 35% at 32% 22%,
+        rgba(255,255,255,0.045) 0%,
+        transparent 60%
+      );
+    }
+
+    #scope-info {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, 208px);
+      font-family: 'Orbitron', monospace;
+      font-size: 0.52rem;
+      letter-spacing: 0.3em;
+      color: rgba(123, 47, 255, 0.65);
+      white-space: nowrap;
+      text-shadow: 0 0 8px rgba(123, 47, 255, 0.5);
+    }
+
+    /* ── Lobby / Round overlay ── */
+    #lobby-overlay {
+      display: flex;
+      position: fixed;
+      inset: 0;
+      z-index: 800;
+      background: rgba(1, 1, 12, 0.96);
+      backdrop-filter: blur(12px);
+      align-items: center;
+      justify-content: center;
+      font-family: 'Orbitron', monospace;
+    }
+
+    #lobby-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      width: 680px;
+      max-width: 96vw;
+    }
+
+    #lobby-title {
+      font-size: clamp(2rem, 6vw, 3.2rem);
+      font-weight: 900;
+      letter-spacing: 0.35em;
+      color: #00f5ff;
+      text-shadow: 0 0 18px #00f5ff, 0 0 40px rgba(0,245,255,0.4);
+      margin: 0;
+    }
+
+    #lobby-subtitle {
+      font-size: 0.52rem;
+      letter-spacing: 0.45em;
+      color: rgba(0, 245, 255, 0.35);
+      margin-top: -10px;
+    }
+
+    #lobby-state-label {
+      font-size: 0.62rem;
+      letter-spacing: 0.3em;
+      padding: 4px 20px;
+      border: 1px solid rgba(123, 47, 255, 0.5);
+      color: #7b2fff;
+      text-shadow: 0 0 8px #7b2fff;
+      box-shadow: 0 0 16px rgba(123, 47, 255, 0.12);
+    }
+
+    #lobby-players-section {
+      width: 100%;
+      border: 1px solid rgba(0, 245, 255, 0.15);
+      background: rgba(0, 10, 30, 0.6);
+    }
+
+    #lobby-players-header {
+      font-size: 0.5rem;
+      letter-spacing: 0.25em;
+      color: rgba(0, 245, 255, 0.5);
+      padding: 6px 14px;
+      border-bottom: 1px solid rgba(0, 245, 255, 0.1);
+    }
+
+    #lobby-players-list {
+      max-height: 240px;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+
+    .lobby-player-row {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      padding: 5px 14px;
+      gap: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .lobby-player-row:last-child { border-bottom: none; }
+
+    .lpr-name  { font-size: 0.56rem; letter-spacing: 0.12em; }
+    .lpr-class { font-size: 0.5rem;  letter-spacing: 0.12em; color: rgba(180,180,220,0.45); text-align: right; }
+    .lpr-kd    { font-size: 0.5rem;  letter-spacing: 0.12em; color: rgba(180,180,220,0.35); text-align: right; }
+
+    #lobby-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #lobby-start-btn {
+      display: none;
+      padding: 10px 48px;
+      background: transparent;
+      border: 1.5px solid #00f5ff;
+      color: #00f5ff;
+      font-family: 'Orbitron', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.3em;
+      cursor: pointer;
+      text-shadow: 0 0 8px #00f5ff;
+      box-shadow: 0 0 20px rgba(0, 245, 255, 0.15);
+      transition: background 0.15s, box-shadow 0.15s;
+    }
+
+    #lobby-start-btn:hover {
+      background: rgba(0, 245, 255, 0.08);
+      box-shadow: 0 0 32px rgba(0, 245, 255, 0.35);
+    }
+
+    #lobby-hint {
+      font-size: 0.46rem;
+      letter-spacing: 0.2em;
+      color: rgba(180, 180, 220, 0.3);
+      text-align: center;
+    }
+
+    #lobby-results {
+      width: 100%;
+      border: 1px solid rgba(123, 47, 255, 0.25);
+      background: rgba(5, 0, 20, 0.6);
+    }
+
+    #results-title {
+      font-size: 0.56rem;
+      letter-spacing: 0.25em;
+      color: #7b2fff;
+      text-shadow: 0 0 10px #7b2fff;
+      padding: 8px 14px;
+      border-bottom: 1px solid rgba(123, 47, 255, 0.15);
+    }
+
+    #results-scores { padding: 6px 0; }
+
+    .results-row {
+      display: grid;
+      grid-template-columns: 0.4fr 2fr 1fr 1fr 1fr;
+      padding: 5px 14px;
+      gap: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      font-size: 0.52rem;
+      letter-spacing: 0.1em;
+    }
+
+    .results-row:last-child { border-bottom: none; }
+    .rr-rank   { color: rgba(200, 200, 255, 0.4); }
+    .rr-class  { color: rgba(180, 180, 220, 0.45); text-align: right; }
+    .rr-kills  { color: rgba(200, 230, 255, 0.85); text-align: right; }
+    .rr-deaths { color: rgba(180, 180, 220, 0.45); text-align: right; }
+
+    #lobby-countdown {
+      font-size: 0.48rem;
+      letter-spacing: 0.2em;
+      color: rgba(0, 245, 255, 0.4);
+      padding: 6px 14px;
+      text-align: center;
+    }
+
+    /* ── 4-arm gap crosshair ── */
+    #crosshair {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 0;
+      height: 0;
+      pointer-events: none;
+      z-index: 50;
+      --ch-gap: 4px;
+    }
+
+    .ch-arm {
+      position: absolute;
+      background: rgba(255, 255, 255, 0.75);
+      transition: background 0.06s, box-shadow 0.06s;
+    }
+
+    /* Top arm */
+    #ch-top {
+      width: 1px;
+      height: 8px;
+      left: -0.5px;
+      bottom: var(--ch-gap);
+    }
+    /* Bottom arm */
+    #ch-bottom {
+      width: 1px;
+      height: 8px;
+      left: -0.5px;
+      top: var(--ch-gap);
+    }
+    /* Left arm */
+    #ch-left {
+      height: 1px;
+      width: 8px;
+      top: -0.5px;
+      right: var(--ch-gap);
+    }
+    /* Right arm */
+    #ch-right {
+      height: 1px;
+      width: 8px;
+      top: -0.5px;
+      left: var(--ch-gap);
+    }
+
+    /* ── AWP ammo HUD ── */
+    #awp-hud {
+      position: fixed;
+      bottom: 28px;
+      right: 28px;
+      display: none;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      pointer-events: none;
+      z-index: 60;
+      font-family: 'Orbitron', 'Courier New', monospace;
+    }
+
+    #awp-label {
+      font-size: 0.46rem;
+      letter-spacing: 0.38em;
+      color: #00f5ff;
+      text-shadow: 0 0 8px #00f5ff;
+      opacity: 0.65;
+    }
+
+    #awp-ammo-row {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+
+    #awp-ammo-current {
+      font-size: 2.2rem;
+      font-weight: 900;
+      color: #00f5ff;
+      text-shadow: 0 0 14px #00f5ff, 0 0 28px rgba(0,245,255,0.4);
+      line-height: 1;
+    }
+
+    #awp-ammo-sep {
+      font-size: 1rem;
+      color: rgba(0,245,255,0.35);
+      font-weight: 300;
+    }
+
+    #awp-ammo-reserve {
+      font-size: 1rem;
+      color: rgba(0,245,255,0.55);
+      font-weight: 400;
+      text-shadow: 0 0 6px rgba(0,245,255,0.3);
+    }
+
+    #awp-reload-bar {
+      display: none;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      width: 140px;
+    }
+
+    #awp-reload-label {
+      font-size: 0.44rem;
+      letter-spacing: 0.28em;
+      color: #00f5ff;
+      text-shadow: 0 0 8px #00f5ff;
+      animation: reloadBlink 0.55s ease-in-out infinite;
+    }
+
+    @keyframes reloadBlink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    #awp-reload-track {
+      width: 100%;
+      height: 3px;
+      background: rgba(0,245,255,0.12);
+      border-radius: 2px;
+    }
+
+    #awp-reload-fill {
+      height: 100%;
+      width: 0%;
+      background: #00f5ff;
+      box-shadow: 0 0 6px #00f5ff;
+      border-radius: 2px;
+      transition: width 0.08s linear;
+    }
+
+    /* ── Lobby section sub-header ── */
+    .lsec-header {
+      font-size: 0.46rem;
+      letter-spacing: 0.28em;
+      color: rgba(0,245,255,0.38);
+      padding-bottom: 6px;
+      width: 100%;
+    }
+    .lsec-note {
+      display: inline;
+      color: rgba(0,245,255,0.22);
+      font-size: 0.42rem;
+      letter-spacing: 0.12em;
+    }
+
+    /* ── Map vote section ── */
+    #lobby-map-vote { width: 100%; }
+    .map-cards {
+      display: flex;
+      gap: 10px;
+      width: 100%;
+    }
+    .map-card {
+      flex: 1;
+      border: 1px solid rgba(255,255,255,0.09);
+      background: rgba(0,5,20,0.55);
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      user-select: none;
+    }
+    .map-card:hover { border-color: rgba(0,245,255,0.3); background: rgba(0,10,30,0.7); }
+    .map-card[data-map="OVERWATCH"]:hover { border-color: rgba(123,47,255,0.35); }
+    .map-card.voted[data-map="TERMINAL"] {
+      border-color: #00f5ff;
+      box-shadow: 0 0 14px rgba(0,245,255,0.2);
+      background: rgba(0,20,40,0.6);
+    }
+    .map-card.voted[data-map="OVERWATCH"] {
+      border-color: #7b2fff;
+      box-shadow: 0 0 14px rgba(123,47,255,0.22);
+      background: rgba(10,0,30,0.6);
+    }
+    .mc-name {
+      font-size: 0.78rem;
+      font-weight: 900;
+      letter-spacing: 0.2em;
+      color: #00f5ff;
+    }
+    .map-card[data-map="OVERWATCH"] .mc-name { color: #7b2fff; text-shadow: 0 0 8px #7b2fff40; }
+    .mc-desc {
+      font-size: 0.44rem;
+      letter-spacing: 0.1em;
+      color: rgba(180,180,220,0.42);
+      line-height: 1.55;
+    }
+    .mc-votes {
+      font-size: 0.46rem;
+      letter-spacing: 0.18em;
+      color: rgba(0,245,255,0.5);
+      margin-top: 5px;
+    }
+    .map-card[data-map="OVERWATCH"] .mc-votes { color: rgba(123,47,255,0.6); }
+    .mc-tag {
+      display: inline-block;
+      font-size: 0.38rem;
+      letter-spacing: 0.2em;
+      padding: 2px 6px;
+      background: rgba(0,245,255,0.1);
+      border: 1px solid rgba(0,245,255,0.2);
+      color: rgba(0,245,255,0.6);
+      margin-top: 3px;
+      width: fit-content;
+    }
+    .map-card[data-map="OVERWATCH"] .mc-tag {
+      background: rgba(123,47,255,0.1);
+      border-color: rgba(123,47,255,0.2);
+      color: rgba(123,47,255,0.65);
+    }
+
+    /* ── Round selector ── */
+    #lobby-rounds { width: 100%; }
+    #rounds-btns {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+      width: 100%;
+    }
+    .round-btn {
+      flex: 1;
+      padding: 9px 0;
+      font-family: 'Orbitron', monospace;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      background: transparent;
+      border: 1px solid rgba(0,245,255,0.18);
+      color: rgba(0,245,255,0.45);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .round-btn:hover:not(:disabled) {
+      border-color: rgba(0,245,255,0.5);
+      color: #00f5ff;
+      background: rgba(0,245,255,0.06);
+    }
+    .round-btn.active {
+      border-color: #00f5ff;
+      color: #00f5ff;
+      background: rgba(0,245,255,0.1);
+      box-shadow: 0 0 12px rgba(0,245,255,0.18);
+    }
+    .round-btn:disabled { opacity: 0.28; cursor: default; }
+
+    /* ── Round wins HUD (top-center during gameplay) ── */
+    #round-wins-hud {
+      position: fixed;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: none;
+      align-items: center;
+      gap: 12px;
+      background: rgba(1,1,14,0.78);
+      border: 1px solid rgba(0,245,255,0.15);
+      padding: 5px 20px 7px;
+      z-index: 60;
+      pointer-events: none;
+      font-family: 'Orbitron', monospace;
+      backdrop-filter: blur(6px);
+      white-space: nowrap;
+    }
+    .rwh-side {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+      min-width: 54px;
+    }
+    .rwh-name {
+      font-size: 0.38rem;
+      letter-spacing: 0.22em;
+      color: rgba(200,200,255,0.38);
+    }
+    .rwh-kills {
+      font-size: 1.5rem;
+      font-weight: 900;
+      line-height: 1.1;
+    }
+    #rwh-left  .rwh-kills { color: #00f5ff; text-shadow: 0 0 10px #00f5ff80; }
+    #rwh-right .rwh-kills { color: #ff2d78; text-shadow: 0 0 10px #ff2d7880; }
+    #rwh-sep {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+    #rwh-sep-slash {
+      font-size: 0.38rem;
+      letter-spacing: 0.15em;
+      color: rgba(200,200,255,0.22);
+    }
+    #rwh-target {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: rgba(0,245,255,0.4);
+      letter-spacing: 0.1em;
+    }
+    #rwh-label {
+      font-size: 0.34rem;
+      letter-spacing: 0.18em;
+      color: rgba(200,200,255,0.2);
+    }
+
+    /* ── ESC / pause menu ── */
+    #pause-menu {
+      display: none;
+      position: fixed; inset: 0; z-index: 950;
+      background: rgba(2,2,10,0.82);
+      backdrop-filter: blur(6px);
+      flex-direction: column; align-items: center; justify-content: center;
+      gap: 1.2rem;
+    }
+    #pause-menu.open { display: flex; }
+    .pause-title {
+      font-family: 'Orbitron', sans-serif; font-weight: 900;
+      font-size: 1.2rem; letter-spacing: 0.45em; color: #00f5ff;
+      text-shadow: 0 0 18px #00f5ff;
+      margin-bottom: 0.5rem;
+    }
+    .pause-btn {
+      font-family: 'Orbitron', sans-serif; font-weight: 700;
+      font-size: 0.72rem; letter-spacing: 0.3em; text-transform: uppercase;
+      padding: 0.85rem 2.8rem;
+      border: 1px solid rgba(0,245,255,0.25);
+      background: rgba(2,2,10,0.6);
+      color: rgba(224,224,255,0.7);
+      cursor: pointer; transition: all 0.15s;
+    }
+    .pause-btn:hover {
+      border-color: #00f5ff; color: #00f5ff;
+      box-shadow: 0 0 14px rgba(0,245,255,0.25);
+    }
+    .pause-btn.danger { border-color: rgba(255,45,120,0.3); color: rgba(255,45,120,0.7); }
+    .pause-btn.danger:hover {
+      border-color: #ff2d78; color: #ff2d78;
+      box-shadow: 0 0 14px rgba(255,45,120,0.25);
+    }
+    .pause-hint {
+      font-family: 'Orbitron', sans-serif; font-size: 0.4rem;
+      letter-spacing: 0.28em; color: rgba(224,224,255,0.22);
+      margin-top: 0.3rem;
+    }
+
+    /* ── Match wins selector ── */
+    #lobby-match-wins { width: 100%; }
+    #match-wins-btns {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+      width: 100%;
+    }
+    .match-wins-btn {
+      flex: 1;
+      padding: 9px 0;
+      font-family: 'Orbitron', monospace;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      background: transparent;
+      border: 1px solid rgba(123,47,255,0.2);
+      color: rgba(123,47,255,0.45);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .match-wins-btn:hover:not(:disabled) {
+      border-color: rgba(123,47,255,0.5);
+      color: #7b2fff;
+      background: rgba(123,47,255,0.06);
+    }
+    .match-wins-btn.active {
+      border-color: #7b2fff;
+      color: #7b2fff;
+      background: rgba(123,47,255,0.1);
+      box-shadow: 0 0 12px rgba(123,47,255,0.18);
+    }
+    .match-wins-btn:disabled { opacity: 0.28; cursor: default; }
+
+    /* ── Round wins dots inside top HUD ── */
+    .rwh-rounds {
+      display: flex;
+      gap: 4px;
+      margin-top: 3px;
+      justify-content: center;
+    }
+    .rwh-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      border: 1px solid rgba(200,200,255,0.22);
+      background: transparent;
+    }
+    #rwh-left  .rwh-dot.filled { background: #00f5ff; border-color: #00f5ff; box-shadow: 0 0 4px #00f5ff80; }
+    #rwh-right .rwh-dot.filled { background: #ff2d78; border-color: #ff2d78; box-shadow: 0 0 4px #ff2d7880; }
+
+    /* ── Round won banner (mid-round) ── */
+    #round-won-banner {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 900;
+      font-family: 'Orbitron', monospace;
+      text-align: center;
+      pointer-events: none;
+    }
+    #rwb-title {
+      font-size: clamp(1.8rem, 5vw, 3rem);
+      font-weight: 900;
+      letter-spacing: 0.3em;
+      text-shadow: 0 0 30px currentColor;
+    }
+    #rwb-sub {
+      font-size: 0.6rem;
+      letter-spacing: 0.35em;
+      color: rgba(200,200,255,0.5);
+      margin-top: 8px;
+    }
+
+    /* ── Match winner banner ── */
+    #match-winner-banner {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 900;
+      font-family: 'Orbitron', monospace;
+      text-align: center;
+      pointer-events: none;
+    }
+    #mwb-title {
+      font-size: clamp(2rem, 6vw, 3.5rem);
+      font-weight: 900;
+      letter-spacing: 0.3em;
+      text-shadow: 0 0 30px currentColor;
+    }
+    #mwb-sub {
+      font-size: 0.6rem;
+      letter-spacing: 0.35em;
+      color: rgba(200,200,255,0.5);
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Loading screen -->
+  <div id="loadingScreen">
+    <div id="loadingTitle">NEON GRID</div>
+    <div id="loadingStatus">LOADING MAP…</div>
+    <div id="loadingText">INITIALIZING SYSTEMS</div>
+    <div id="loadingBar">
+      <div id="loadingFill"></div>
+    </div>
+    <div id="loading-tip"></div>
+  </div>
+
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- Click-to-play overlay -->
+  <div id="lock-overlay">
+    <h2>CLICK TO PLAY</h2>
+    <p>WASD — MOVE &nbsp;·&nbsp; MOUSE — AIM &nbsp;·&nbsp; SPACE — JUMP &nbsp;·&nbsp; SHIFT — SPRINT</p>
+  </div>
+
+  <!-- 4-arm gap crosshair -->
+  <div id="crosshair">
+    <div class="ch-arm" id="ch-top"></div>
+    <div class="ch-arm" id="ch-bottom"></div>
+    <div class="ch-arm" id="ch-left"></div>
+    <div class="ch-arm" id="ch-right"></div>
+  </div>
+
+  <!-- AWP ammo HUD (WRAITH class only) -->
+  <div id="awp-hud">
+    <div id="awp-reload-bar">
+      <div id="awp-reload-label">RELOADING…</div>
+      <div id="awp-reload-track"><div id="awp-reload-fill"></div></div>
+    </div>
+    <div id="awp-ammo-row">
+      <span id="awp-ammo-current">5</span>
+      <span id="awp-ammo-sep">/</span>
+      <span id="awp-ammo-reserve">25</span>
+    </div>
+    <div id="awp-label">AWP</div>
+  </div>
+
+  <!-- Scope overlay — visible only when WRAITH aims in -->
+  <div id="scope-overlay">
+    <div id="scope-bg"></div>
+    <svg id="scope-reticle" viewBox="0 0 380 380" xmlns="http://www.w3.org/2000/svg">
+      <line x1="0"   y1="190" x2="162" y2="190" stroke="#9b5fff" stroke-width="1.2" opacity="0.9"/>
+      <line x1="218" y1="190" x2="380" y2="190" stroke="#9b5fff" stroke-width="1.2" opacity="0.9"/>
+      <line x1="190" y1="0"   x2="190" y2="162" stroke="#9b5fff" stroke-width="1.2" opacity="0.9"/>
+      <line x1="190" y1="218" x2="190" y2="380" stroke="#9b5fff" stroke-width="1.2" opacity="0.9"/>
+      <circle cx="190" cy="190" r="2.8" fill="#d0a0ff"/>
+      <circle cx="133" cy="190" r="3.2" fill="#7b2fff" opacity="0.85"/>
+      <circle cx="247" cy="190" r="3.2" fill="#7b2fff" opacity="0.85"/>
+      <circle cx="97"  cy="190" r="2.2" fill="#7b2fff" opacity="0.55"/>
+      <circle cx="283" cy="190" r="2.2" fill="#7b2fff" opacity="0.55"/>
+      <circle cx="190" cy="133" r="3.2" fill="#7b2fff" opacity="0.85"/>
+      <circle cx="190" cy="247" r="3.2" fill="#7b2fff" opacity="0.85"/>
+      <circle cx="190" cy="97"  r="2.2" fill="#7b2fff" opacity="0.55"/>
+      <circle cx="190" cy="283" r="2.2" fill="#7b2fff" opacity="0.55"/>
+      <line x1="183" y1="247" x2="197" y2="247" stroke="#7b2fff" stroke-width="1" opacity="0.6"/>
+      <line x1="185" y1="283" x2="195" y2="283" stroke="#7b2fff" stroke-width="0.9" opacity="0.4"/>
+      <line x1="247"  y1="183" x2="247"  y2="197" stroke="#7b2fff" stroke-width="1"   opacity="0.6"/>
+      <circle cx="190" cy="190" r="185" fill="none" stroke="#7b2fff" stroke-width="1.2" opacity="0.5"/>
+    </svg>
+    <div id="scope-ring"></div>
+    <div id="scope-lens-glare"></div>
+    <div id="scope-info">6× · ION SNIPER</div>
+  </div>
+
+  <!-- Lobby / Round overlay -->
+  <div id="lobby-overlay">
+    <div id="lobby-content">
+      <h1 id="lobby-title">NEON GRID</h1>
+      <div id="lobby-subtitle">TACTICAL ARENA · CYBERPUNK FPS</div>
+      <div id="lobby-state-label">LOBBY</div>
+
+      <!-- ── Lobby code (visible to all players; host shares this) ── -->
+      <div id="lobby-code-row" style="
+        display:none; margin: 0.5rem 0 0.2rem;
+        flex-direction:column; align-items:center; gap:4px;">
+        <div style="font-size:0.44rem; letter-spacing:0.35em; color:rgba(0,245,255,0.45);">INVITE CODE — SHARE WITH FRIENDS</div>
+        <div id="lobby-code-display" style="
+          font-size:2rem; font-weight:900; letter-spacing:0.35em;
+          color:#00f5ff; text-shadow:0 0 18px #00f5ff, 0 0 36px rgba(0,245,255,0.4);
+          cursor:pointer; user-select:all;"
+          title="Click to copy"></div>
+        <div id="lobby-code-copied" style="
+          font-size:0.4rem; letter-spacing:0.25em; color:#00f5ff;
+          opacity:0; transition:opacity 0.3s;">COPIED TO CLIPBOARD</div>
+      </div>
+
+      <div id="lobby-players-section">
+        <div id="lobby-players-header">OPERATIVES [0 / 10]</div>
+        <div id="lobby-players-list"></div>
+      </div>
+
+      <!-- ── Map voting ─────────────────────────────────────────── -->
+      <div id="lobby-map-vote">
+        <div class="lsec-header">VOTE FOR MAP</div>
+        <div class="map-cards">
+          <div class="map-card" data-map="TERMINAL">
+            <div class="mc-name">TERMINAL</div>
+            <div class="mc-desc">Industrial server complex — corridors, catwalks &amp; tight angles</div>
+            <div class="mc-tag">CLOSE RANGE</div>
+            <div class="mc-votes" id="votes-TERMINAL">0 VOTES</div>
+          </div>
+          <div class="map-card" data-map="OVERWATCH">
+            <div class="mc-name">OVERWATCH</div>
+            <div class="mc-desc">Open rooftop combat zone — elevated nests &amp; long sightlines</div>
+            <div class="mc-tag">LONG RANGE</div>
+            <div class="mc-votes" id="votes-OVERWATCH">0 VOTES</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Kill target selector ──────────────────────────────── -->
+      <div id="lobby-rounds">
+        <div class="lsec-header">KILLS PER ROUND &nbsp;<span class="lsec-note">FIRST TO <span id="rounds-target-label">10</span> KILLS WINS THE ROUND</span></div>
+        <div id="rounds-btns">
+          <button class="round-btn" data-rounds="5">5</button>
+          <button class="round-btn active" data-rounds="10">10</button>
+          <button class="round-btn" data-rounds="15">15</button>
+          <button class="round-btn" data-rounds="20">20</button>
+        </div>
+      </div>
+
+      <!-- ── Match wins selector ───────────────────────────────── -->
+      <div id="lobby-match-wins">
+        <div class="lsec-header">ROUNDS TO WIN MATCH &nbsp;<span class="lsec-note">FIRST TO WIN <span id="match-wins-target-label">3</span> ROUNDS WINS</span></div>
+        <div id="match-wins-btns">
+          <button class="match-wins-btn" data-wins="1">1</button>
+          <button class="match-wins-btn active" data-wins="3">3</button>
+          <button class="match-wins-btn" data-wins="5">5</button>
+        </div>
+      </div>
+
+      <div id="lobby-actions">
+        <button id="lobby-start-btn">START ROUND</button>
+        <div id="lobby-hint">WAITING FOR HOST TO START THE ROUND…</div>
+      </div>
+
+      <div id="lobby-results" style="display:none">
+        <div id="results-title">ROUND COMPLETE — INITIATING DEBRIEF</div>
+        <div id="results-scores"></div>
+        <div id="lobby-countdown"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Round wins HUD (top-center, visible during gameplay) ── -->
+  <div id="round-wins-hud">
+    <div class="rwh-side" id="rwh-left">
+      <span class="rwh-name" id="rwh-left-name">YOU</span>
+      <span class="rwh-kills" id="rwh-left-kills">0</span>
+      <div class="rwh-rounds" id="rwh-left-dots"></div>
+    </div>
+    <div id="rwh-sep">
+      <span id="rwh-label">KILLS</span>
+      <span id="rwh-target">10</span>
+      <span id="rwh-sep-slash">TARGET</span>
+    </div>
+    <div class="rwh-side" id="rwh-right">
+      <span class="rwh-name" id="rwh-right-name">OPP</span>
+      <span class="rwh-kills" id="rwh-right-kills">0</span>
+      <div class="rwh-rounds" id="rwh-right-dots"></div>
+    </div>
+  </div>
+
+  <!-- ── Round won banner (mid-round, not match over) ── -->
+  <div id="round-won-banner">
+    <div id="rwb-title">ROUND WON!</div>
+    <div id="rwb-sub">1 / 3 ROUNDS TO WIN MATCH</div>
+  </div>
+
+  <!-- ── ESC / pause menu ── -->
+  <div id="pause-menu">
+    <div class="pause-title">PAUSED</div>
+    <button class="pause-btn" id="pause-resume">RESUME</button>
+    <button class="pause-btn danger" id="pause-quit">LEAVE MATCH</button>
+    <div class="pause-hint">ESC TO RESUME</div>
+  </div>
+
+  <!-- ── Match winner banner ── -->
+  <div id="match-winner-banner">
+    <div id="mwb-title">YOU WIN</div>
+    <div id="mwb-sub">MATCH COMPLETE</div>
+  </div>
+
+  <!-- Loading tips + cycling status logic -->
+  <script>
+  (function() {
+    const TIPS = [
+      'Use the catwalks above the central area for elevation advantage.',
+      'The WRAITH class excels at long-range — find a line of sight before scoping.',
+      'GHOST moves fastest — use speed to flank the enemy team.',
+      'Crouching reduces your movement sound significantly.',
+      'The minimap in the bottom-right shows enemy positions in real time.',
+      'SOLDIER has the most HP — use it to push through choke points.',
+      'Jump-peeking corners briefly reveals enemies without exposing yourself.',
+      'Reload behind cover — you are vulnerable while reloading.',
+    ];
+    const el = document.getElementById('loading-tip');
+    if (el) el.textContent = TIPS[Math.floor(Math.random() * TIPS.length)];
+
+    const STAGES = ['LOADING MAP…', 'CONNECTING…', 'SPAWNING…', 'GO!'];
+    const statusEl = document.getElementById('loadingStatus');
+    let stage = 0;
+    window._advanceLoadingStage = function(idx) {
+      stage = Math.min(idx, STAGES.length - 1);
+      if (statusEl) statusEl.textContent = STAGES[stage];
+    };
+
+    // Auto-advance stages with a timer fallback
+    const stageTimers = [1200, 2800, 4200];
+    stageTimers.forEach((delay, i) => {
+      setTimeout(() => {
+        if (stage <= i) window._advanceLoadingStage(i + 1);
+      }, delay);
+    });
+  })();
+  </script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

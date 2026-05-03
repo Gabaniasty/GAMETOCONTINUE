@@ -1,0 +1,98 @@
+Build the full stats, leaderboard, and post-match summary system.
+
+── POST-MATCH SCREEN — public/js/PostMatch.js ──
+
+Triggered by 'match:ended' socket event. Shows for 15 seconds then returns to matchmaking.
+
+Layout (full-screen overlay):
+  Header: map name, match duration, game mode
+  Large "VICTORY" (cyan) or "DEFEAT" (red) — based on which team won
+  
+  Main table — all players sorted by score:
+    Columns: RANK | PLAYER | KILLS | DEATHS | HEADSHOTS | DAMAGE | SCORE | RP CHANGE
+    Your row highlighted in neon border
+    RP change column: "+28 RP" in green or "-18 RP" in red with arrow
+    If rank changed: show "RANK UP → GOLD II" badge animation
+  
+  Right panel — your personal stats this match:
+    Accuracy: (shots_hit / shots_fired * 100).toFixed(1) + "%"
+    Best kill streak
+    Total damage dealt
+    K/D for this match
+  
+  Bottom: countdown "Returning to lobby in 15..."
+  Skip button: "CONTINUE" returns immediately
+
+── RANK UP ANIMATION ──
+
+If player's rank tier changed (e.g. Silver → Gold):
+  Dramatic full-screen flash
+  Old rank badge slides out left
+  New rank badge slides in from right with glow pulse
+  Play rank-up tone: ascending 5-note chord
+  Text: "RANK UP! You are now [TIER] [DIVISION]" in tier color
+
+── LEADERBOARD PAGE — public/leaderboard.html ──
+
+GET /api/leaderboard returns top 100 by rank_points.
+
+Page layout:
+  Header: "GLOBAL LEADERBOARD — NEON GRID"
+  Filter tabs: ALL / THIS WEEK / TODAY (future feature, stub it)
+  
+  Table:
+    # | PLAYER | RANK | RP | K/D | HS% | MATCHES | WIN RATE
+    Rank badge icon (colored square with tier initial + division number)
+    Top 3: special gold/silver/bronze styling
+    Your entry: always shown even if outside top 100, with "— YOUR RANK: #X" separator
+  
+  Auto-refresh every 60 seconds
+  Hover row: shows full stats tooltip
+
+── PROFILE PAGE — public/profile.html ──
+
+GET /api/profile/:username
+
+Shows:
+  Username + rank badge (large)
+  Level progress bar (XP toward next level)
+  Career stats: total kills, deaths, K/D, headshot%, win rate, total matches, playtime
+  Rank history (last 10 RP changes as small +/- badges)
+  Recent matches (last 10): map, result, kills, deaths, RP change, date
+
+── API ROUTES ──
+
+Add to AuthRouter.js:
+
+GET /api/leaderboard?limit=100
+  Returns top players by rank_points, joined with stats and users tables
+
+GET /api/profile/:username
+  Returns full stats + rank + recent matches for a player
+
+GET /api/stats/me (auth required)
+  Returns your own complete stats + rank + rank history
+
+POST /api/match/end (internal, called by GameServer after match ends)
+  Updates all match_players records, calls updateStatsAfterMatch for each player
+  Calls updateRankPoints for each player based on result
+  Checks for rank tier change, includes in response
+
+── IN-GAME SCOREBOARD ──
+
+Tab key held: shows live in-match scoreboard overlay:
+  All players in match, sorted by kills
+  Columns: PLAYER | KILLS | DEATHS | DAMAGE | SCORE
+  Updates every 2 seconds from server
+  Shows team A score vs team B score at top
+
+ACCEPTANCE CRITERIA:
+✓ Post-match screen shows after every match with all player stats
+✓ RP gain/loss is shown per player
+✓ Rank-up animation plays if tier changed
+✓ Leaderboard page loads and shows top 100 players
+✓ Profile page loads for any username
+✓ In-match scoreboard shows with Tab key
+✓ All stats are persisted to database correctly after match ends
+✓ Headshot percentage is tracked and displayed
+✓ Win rate is calculated and displayed correctly

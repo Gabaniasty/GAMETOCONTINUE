@@ -1,0 +1,113 @@
+Build the first fully designed map for NEON GRID called "TERMINAL".
+It is a medium-sized indoor cyberpunk facility — corridors, open halls, 
+catwalks, and chokepoints. Good for AWP quick-scoping and mid-range duels.
+Everything built in Three.js. No external files required.
+
+── TERMINAL MAP LAYOUT (top-down, 100x100 units) ──
+
+                    NORTH SPAWN (Team A)
+    ┌──────────────────────────────────────────┐
+    │  [SERVER ROOM]  [CATWALK]  [CONTROL HUB] │
+    │        │            │            │        │
+    │  [CORRIDOR A]  [MAIN HALL]  [CORRIDOR B]  │
+    │        │            │            │        │
+    │  [SIDE ROOM]   [CHOKE]    [GENERATOR]    │
+    └──────────────────────────────────────────┘
+                    SOUTH SPAWN (Team B)
+
+── Create public/js/maps/TerminalMap.js ──
+
+All geometry uses these shared materials (same as before):
+  matFloor, matWall, matRoof, matGlowCyan, matGlowPink, matGlowPurp
+  Plus:
+  matGrate: MeshStandardMaterial color 0x111122, wireframe true (for catwalks)
+  matGlass: transparent 0.3 opacity, emissive 0x0033ff
+
+Place ALL the following structures:
+
+── OUTER SHELL ──
+  Floor: PlaneGeometry(100,100) at y=0 rotated flat, matFloor
+  Ceiling: PlaneGeometry(100,100) at y=9 rotated flat, matRoof, backSide
+  4 Outer walls 1.5 thick, 9 tall sealing the map
+
+── MAIN HALL (center of map) ──
+  Open rectangular space 30x20 units in center
+  4 support columns: CylinderGeometry(1, 1, 9, 8) at each corner of hall, matWall
+    each column: emissive strip at y=5 (glowing cyan ring)
+  Floor: matPlaza (hexagonal texture)
+  Overhead lighting: 4 PointLights cyan intensity 3 distance 18
+
+── CORRIDORS A & B (flanking routes) ──
+  Left corridor: 8 units wide, 50 units long from north to south wall at x=-25
+    Low cover boxes alternating left/right every 12 units: [3,2,3] matWall
+    Neon strip lighting along ceiling: 3 PointLights pink
+  Right corridor: mirror of left at x=+25
+
+── SERVER ROOM (northwest corner) ──
+  Room 18x16 units at (-35, 0, -30)
+  Server racks: 6 x BoxGeometry(2, 5, 8) in two rows of 3, matWall
+    each rack: cyan emissive horizontal strips at y=1.5, 3.0, 4.5
+    PointLight(0x00f5ff, 1, 4) behind each rack row
+  Entry doorway: 4-wide gap in south wall
+  Window into main hall: PlaneGeometry(8,3) matGlass at y=4
+
+── CONTROL HUB (northeast corner) ──
+  Room 18x16 at (+35, 0, -30)
+  Central console: BoxGeometry(8,2,4) at y=1, matWall, emissive pink top surface
+  Holographic displays: 4 thin planes PlaneGeometry(3,2) standing vertically
+    each glowing blue (matGlass) arranged around console
+  Raised floor platform: [10,0.4,8] at y=0.4, matGlowCyan
+
+── CATWALK (elevated mid route) ──
+  Metal catwalk at y=5.5 crossing north to south through center
+  Width: 4 units, matGrate (wireframe)
+  Railing each side: [length, 1.2, 0.1] matGlowCyan
+  2 ladders connecting ground to catwalk (each side, north-half)
+    Ladder: BoxGeometry(0.8, 5.5, 0.2) + rungs every 0.5 units
+
+── CHOKEPOINT (center south) ──
+  Narrow 6-unit wide passage between Main Hall and south spawn
+  2 concrete barricades [4,1.8,1] each side of choke, matWall
+  Overhead: broken ceiling panel hanging at angle (visual only)
+  Pink warning light flickering
+
+── SIDE ROOM (southwest) ──
+  Room 14x12 at (-35, 0, 30)
+  Industrial theme: generator box [6,4,4] matWall center
+    Glowing coolant pipes: CylinderGeometry(0.15, 0.15, 3, 6) connecting box to wall, matGlowCyan
+  Entry from both corridor and exterior
+
+── GENERATOR ROOM (southeast) ──
+  Room 14x12 at (+35, 0, 30)
+  Large turbine: CylinderGeometry(3, 3, 5, 16) at center y=2.5, matWall
+    Animated: rotate turbine on Y at 0.5 rad/s
+  Neon warning tape: alternating yellow/black stripes on floor (canvas texture)
+  PointLight(0xff6600, 2, 8) orange — industrial danger light
+
+── SPAWN ZONES ──
+  Team A spawns: 5 points across north edge (z=-45, y=1.6, x = -20 -10 0 10 20)
+  Team B spawns: 5 points across south edge (z=+45, y=1.6, x = -20 -10 0 10 20)
+
+── LIGHTING ──
+  Ambient: AmbientLight(0x060612, 0.8)
+  Main hall: 4 x PointLight(0x00f5ff, 3, 20)
+  Corridors: 6 x PointLight(0xff2d78, 2, 15) alternating
+  Server room: 3 x PointLight(0x00f5ff, 1.5, 8)
+  Control hub: 3 x PointLight(0xff2d78, 1.5, 8)
+  Generator: PointLight(0xff6600, 2, 10) — FLICKER (random intensity 1.5-3.0)
+  Catwalk: 4 x PointLight(0x7b2fff, 1.5, 8) purple under-lighting
+
+── COLLISION ──
+  Export getCollisionBoxes() with AABBs for all solid geometry
+  Include: outer walls, all room walls, server racks, console, columns, barricades, cover boxes
+  Do NOT include: glass, grate, lighting fixtures, decorative elements
+
+ACCEPTANCE CRITERIA:
+✓ Map loads with all rooms, corridors, and catwalk visible
+✓ Player can walk through all corridors without getting stuck
+✓ Player can access catwalk via ladders (teleport trigger when touching ladder)
+✓ Neon lighting creates distinct atmosphere in each zone
+✓ Generator turbine slowly rotates
+✓ Generator light flickers
+✓ All collision boxes prevent shooting/walking through solid walls
+✓ No floating geometry or Z-fighting

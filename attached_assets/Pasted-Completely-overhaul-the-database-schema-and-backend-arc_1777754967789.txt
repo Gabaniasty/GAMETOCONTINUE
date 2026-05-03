@@ -1,0 +1,123 @@
+Completely overhaul the database schema and backend architecture for NEON GRID.
+We are rebuilding this into a Call of Duty style competitive multiplayer FPS.
+Do not break existing Socket.io connection or Express server.
+
+── DATABASE — src/db/Database.js ──
+
+Drop and recreate all tables with this schema:
+
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT UNIQUE NOT NULL,
+  email TEXT UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS player_stats (
+  user_id INTEGER PRIMARY KEY,
+  kills INTEGER DEFAULT 0,
+  deaths INTEGER DEFAULT 0,
+  assists INTEGER DEFAULT 0,
+  headshots INTEGER DEFAULT 0,
+  shots_fired INTEGER DEFAULT 0,
+  shots_hit INTEGER DEFAULT 0,
+  damage_dealt INTEGER DEFAULT 0,
+  matches_played INTEGER DEFAULT 0,
+  matches_won INTEGER DEFAULT 0,
+  playtime_seconds INTEGER DEFAULT 0,
+  xp INTEGER DEFAULT 0,
+  level INTEGER DEFAULT 1,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS player_rank (
+  user_id INTEGER PRIMARY KEY,
+  rank_tier TEXT DEFAULT 'BRONZE',
+  rank_division INTEGER DEFAULT 1,
+  rank_points INTEGER DEFAULT 0,
+  peak_tier TEXT DEFAULT 'BRONZE',
+  peak_points INTEGER DEFAULT 0,
+  win_streak INTEGER DEFAULT 0,
+  loss_streak INTEGER DEFAULT 0,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS matches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  map_name TEXT NOT NULL,
+  game_mode TEXT DEFAULT 'DEATHMATCH',
+  started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  ended_at DATETIME,
+  duration_seconds INTEGER,
+  winner_user_id INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS match_players (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  match_id INTEGER,
+  user_id INTEGER,
+  kills INTEGER DEFAULT 0,
+  deaths INTEGER DEFAULT 0,
+  assists INTEGER DEFAULT 0,
+  headshots INTEGER DEFAULT 0,
+  damage_dealt INTEGER DEFAULT 0,
+  score INTEGER DEFAULT 0,
+  placement INTEGER DEFAULT 1,
+  rp_change INTEGER DEFAULT 0,
+  FOREIGN KEY (match_id) REFERENCES matches(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+Export these methods from Database.js:
+  createUser(username, passwordHash, email)
+  getUserByUsername(username)
+  getUserById(id)
+  getStats(userId)
+  getRank(userId)
+  updateStatsAfterMatch(userId, { kills, deaths, assists, headshots, shotsFired, shotsHit, damage, won, playtimeSeconds })
+  updateRankPoints(userId, rpChange, won)
+  getLeaderboard(limit=50)   — returns top players by rank_points JOIN stats JOIN users
+  createMatch(mapName, gameMode)
+  addMatchPlayer(matchId, userId)
+  finalizeMatch(matchId, winnerId, durationSeconds)
+  updateMatchPlayer(matchId, userId, stats)
+  getMatchHistory(userId, limit=10)
+
+── RANKING SYSTEM CONSTANTS — src/game/RankSystem.js ──
+
+Define the full rank ladder:
+
+const RANKS = [
+  { tier: 'BRONZE',   division: 3, minRP: 0,    maxRP: 399,  color: '#cd7f32' },
+  { tier: 'BRONZE',   division: 2, minRP: 400,  maxRP: 799,  color: '#cd7f32' },
+  { tier: 'BRONZE',   division: 1, minRP: 800,  maxRP: 1199, color: '#cd7f32' },
+  { tier: 'SILVER',   division: 3, minRP: 1200, maxRP: 1599, color: '#c0c0c0' },
+  { tier: 'SILVER',   division: 2, minRP: 1600, maxRP: 1999, color: '#c0c0c0' },
+  { tier: 'SILVER',   division: 1, minRP: 2000, maxRP: 2399, color: '#c0c0c0' },
+  { tier: 'GOLD',     division: 3, minRP: 2400, maxRP: 2799, color: '#ffd700' },
+  { tier: 'GOLD',     division: 2, minRP: 2800, maxRP: 3199, color: '#ffd700' },
+  { tier: 'GOLD',     division: 1, minRP: 3200, maxRP: 3599, color: '#ffd700' },
+  { tier: 'PLATINUM', division: 3, minRP: 3600, maxRP: 3999, color: '#00f5ff' },
+  { tier: 'PLATINUM', division: 2, minRP: 4000, maxRP: 4399, color: '#00f5ff' },
+  { tier: 'PLATINUM', division: 1, minRP: 4400, maxRP: 4799, color: '#00f5ff' },
+  { tier: 'DIAMOND',  division: 3, minRP: 4800, maxRP: 5199, color: '#b9f2ff' },
+  { tier: 'DIAMOND',  division: 2, minRP: 5200, maxRP: 5599, color: '#b9f2ff' },
+  { tier: 'DIAMOND',  division: 1, minRP: 5600, maxRP: 5999, color: '#b9f2ff' },
+  { tier: 'MASTER',   division: 1, minRP: 6000, maxRP: 7999, color: '#ff2d78' },
+  { tier: 'GRANDMASTER', division: 1, minRP: 8000, maxRP: Infinity, color: '#7b2fff' },
+]
+
+calculateRPChange(playerRP, opponentAvgRP, won, kills, deaths, assists):
+  base = won ? 28 : -18
+  kda  = (kills + assists * 0.5) / Math.max(deaths, 1)
+  perfBonus = Math.round((kda - 1.0) * 6)   // good KDA gives extra RP
+  clamp perfBonus between -8 and +12
+  rpDiff = (opponentAvgRP - playerRP) / 400  // playing up gives more, playing down gives less
+  total = base + perfBonus + Math.round(rpDiff * 10)
+  return Math.max(total, won ? 5 : -30)
+
+getRankFromRP(rp): returns the matching RANKS entry
+
+Export: RANKS, calculateRPChange, getRankFromRP

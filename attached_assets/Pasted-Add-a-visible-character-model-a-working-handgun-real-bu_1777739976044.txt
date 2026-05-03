@@ -1,0 +1,187 @@
+Add a visible character model, a working handgun, real bullets with travel, and sound effects to NEON GRID.
+
+This builds on the existing Three.js scene and Socket.io multiplayer. Do not break existing movement or networking.
+
+─────────────────────────────────────────
+1. CHARACTER MODEL — public/js/CharacterModel.js
+─────────────────────────────────────────
+
+Create a function buildCharacterModel(classColor) that returns a THREE.Group
+representing a humanoid character made entirely from BoxGeometry:
+
+  Head:    BoxGeometry(0.5, 0.5, 0.5)  — centered at y=1.5
+  Torso:   BoxGeometry(0.7, 0.8, 0.35) — centered at y=0.9
+  L Arm:   BoxGeometry(0.2, 0.6, 0.2)  — at x=-0.45, y=0.9
+  R Arm:   BoxGeometry(0.2, 0.6, 0.2)  — at x=+0.45, y=0.9
+  L Leg:   BoxGeometry(0.28, 0.7, 0.28)— at x=-0.2,  y=0.25
+  R Leg:   BoxGeometry(0.28, 0.7, 0.28)— at x=+0.2,  y=0.25
+
+Material for all parts:
+  - MeshStandardMaterial, color: 0x0d0d22
+  - emissive: classColor (the player's class color)
+  - emissiveIntensity: 0.4
+  - Use EdgesGeometry + LineSegments on top of each mesh with LineBasicMaterial
+    color classColor and opacity 0.8 — this gives a neon wireframe outline effect
+
+Right arm of model holds a small gun:
+  Gun body:   BoxGeometry(0.08, 0.08, 0.35), color 0x222233, emissive 0x00f5ff, intensity 0.6
+  Gun barrel: BoxGeometry(0.04, 0.04, 0.2),  attached to front of body
+  Position the gun group at x=+0.45, y=0.85, z=-0.2 relative to character root
+
+The group root sits at y=0 (feet level). Rotate the entire group on Y axis to match
+the remote player's rotY from server state.
+
+In Game.js, replace the existing simple box remote player meshes with buildCharacterModel().
+
+─────────────────────────────────────────
+2. FIRST-PERSON HANDGUN — add to Game.js
+─────────────────────────────────────────
+
+Create a separate weapon scene and weapon camera so the gun never clips through walls:
+
+  weaponScene  = new THREE.Scene()
+  weaponCamera = new THREE.PerspectiveCamera(60, aspect, 0.01, 10)
+
+Build a viewmodel gun group (what the local player sees bottom-right):
+  Slide/body:  BoxGeometry(0.06, 0.07, 0.28)  color 0x1a1a2e, emissive 0x00f5ff, intensity 0.5
+  Barrel:      BoxGeometry(0.025, 0.025, 0.18) positioned at front-top of body
+  Handle:      BoxGeometry(0.055, 0.12, 0.07)  at bottom-rear of body
+  Trigger:     BoxGeometry(0.012, 0.06, 0.02)  at middle-bottom
+  Muzzle tip:  BoxGeometry(0.04, 0.04, 0.01)   at very front of barrel
+
+Position the gun group at: x=0.22, y=-0.18, z=-0.35 (bottom-right of view)
+Slight tilt: rotation.z = -0.05, rotation.x = 0.04
+
+Add to weaponScene and render it AFTER the main scene each frame:
+  renderer.autoClear = false
+  renderer.clearDepth()
+  renderer.render(weaponScene, weaponCamera)
+
+─────────────────────────────────────────
+3. SHOOT ANIMATION & RECOIL
+─────────────────────────────────────────
+
+When the player fires, animate the viewmodel gun:
+
+Recoil animation (50ms total):
+  - Phase 1 (15ms): translate gun z += 0.05, rotate x -= 0.08 (kicks back/up)
+  - Phase 2 (35ms): lerp back to original position
+
+Use a simple animation queue with timestamps, updated each frame.
+
+Muzzle flash:
+  - A PointLight (color 0x00f5ff, intensity 8, distance 2) at the barrel tip
+  - Visible for exactly 60ms then intensity set to 0
+  - A small PlaneGeometry(0.12, 0.12) with a white-to-cyan radial gradient canvas texture
+    facing the camera, at barrel tip, visible for 60ms
+
+─────────────────────────────────────────
+4. VISIBLE BULLETS — public/js/BulletSystem.js
+─────────────────────────────────────────
+
+Create a BulletSystem class that manages client-side visible bullets:
+
+Each bullet:
+  - Geometry: CylinderGeometry(0.015, 0.015, 0.18, 6) rotated to face travel direction
+  - Material: MeshBasicMaterial color 0xffffff, emissive 0x00f5ff
+  - A PointLight attached (color 0x00f5ff, intensity 3, distance 1.5) for a glow trail
+  - Travel speed: 60 units/second
+  - Max lifetime: 1.5 seconds (then remove)
+  - Spawn at barrel tip position (camera pos + forward*0.4 + right*0.15 + down*0.1)
+
+Tracer trail:
+  Keep last 6 positions of the bullet each frame.
+  Draw a Line (THREE.Line) through those positions with LineBasicMaterial
+  color 0x00f5ff, opacity fading from 0.8 at newest to 0 at oldest.
+  Update geometry each frame.
+
+On hit (when server confirms a hit via 'player:hit' event):
+  - Stop the bullet at hit position
+  - Spawn impact effect: 6 small SphereGeometry(0.04) pieces flying outward
+    in random directions, pink color (0xff2d78), fade out over 300ms
+  - Spawn a PointLight (pink, intensity 10, distance 3) at impact, fade over 200ms
+  - Remove bullet mesh
+
+In Controls.js, when left click fires:
+  1. Emit 'player:shoot' to server with { origin, direction }
+  2. Call bulletSystem.spawnBullet(origin, direction) for local visual
+
+─────────────────────────────────────────
+5. SOUND EFFECTS — public/js/SoundSystem.js
+─────────────────────────────────────────
+
+Create a SoundSystem class using Web Audio API only (zero audio files).
+
+const audio = new (window.AudioContext || window.webkitAudioContext)()
+
+Method: playGunshot()
+  Layer these together simultaneously:
+  
+  a) Tone burst (the "crack"):
+     OscillatorNode, type: 'square', frequency: 180hz
+     GainNode: attack 0ms → peak 0.6 → decay to 0 over 80ms
+     Connect: oscillator → gain → audio.destination
+  
+  b) Noise burst (the "body"):
+     Create 0.15 second buffer of white noise (Math.random()*2-1 per sample)
+     AudioBufferSourceNode → BiquadFilterNode (lowpass, frequency 800hz) →
+     GainNode: instant peak 0.4 → decay to 0 over 120ms
+     Connect to destination
+  
+  c) Sub thump (the "punch"):
+     OscillatorNode, type: 'sine', frequency sweep 90hz → 30hz over 80ms
+     GainNode: peak 0.5 → decay 80ms
+  
+  Start all three at audio.currentTime, duration 0.15s total.
+
+Method: playHitConfirm()  (plays when YOUR bullet hits someone)
+  Short metallic tick:
+  OscillatorNode type 'triangle', 1200hz → 600hz over 40ms, gain 0.3 → 0
+
+Method: playTakeDamage()  (plays when YOU are hit)
+  Low thud + distortion:
+  White noise buffer, highpass filter 200hz, gain 0.5 → 0 over 100ms
+  Plus oscillator sine 60hz, gain 0.4 → 0 over 80ms
+
+Method: playKill()  (plays when you get a kill)
+  Quick ascending 3-note arpeggio:
+  Three oscillators (sine), frequencies 440hz, 554hz, 659hz
+  Start times: t+0ms, t+60ms, t+120ms
+  Each: gain 0.25, duration 80ms with fast decay
+
+IMPORTANT: Call audio.resume() on the first user interaction (click) to bypass
+browser autoplay policy. Add a one-time click listener on document for this.
+
+─────────────────────────────────────────
+6. WIRE EVERYTHING TOGETHER in main.js
+─────────────────────────────────────────
+
+Instantiate: soundSystem, bulletSystem
+
+On local player shoot:
+  soundSystem.playGunshot()
+  bulletSystem.spawnBullet(origin, direction)
+
+Network events:
+  'player:hit'      → soundSystem.playHitConfirm(), bulletSystem.onHit(position)
+  'player:damaged'  → soundSystem.playTakeDamage(), hud.flashDamage()
+  'player:killed'   → soundSystem.playKill()
+
+Each animation frame:
+  bulletSystem.update(delta)
+  renderer.render(mainScene, camera)
+  renderer.clearDepth()
+  renderer.render(weaponScene, weaponCamera)
+
+─────────────────────────────────────────
+ACCEPTANCE CRITERIA — verify all of these:
+─────────────────────────────────────────
+✓ Other players appear as humanoid neon-outlined figures, not plain boxes
+✓ The gun is visible bottom-right at all times during gameplay
+✓ Left click fires: gun kicks back, muzzle flash appears, gunshot sound plays
+✓ A glowing cyan bullet visibly travels from the gun toward the target
+✓ When bullet hits a player, pink impact particles burst at hit location
+✓ A distinct hit-confirm sound plays for the shooter
+✓ A damage sound plays for the player who was hit
+✓ Kill sound plays on getting a kill
+✓ All sounds work (no silent failures) — if AudioContext was blocked, it resumes on first click

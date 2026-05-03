@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEON GRID — FIND MATCH</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    /* ── Base ─────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      min-height: 100vh;
+      background: #06060f;
+      color: #e0e0ff;
+      font-family: 'Orbitron', monospace;
+      overflow-x: hidden;
+    }
+
+    /* ── Animated bg grid ────────────────────────────────────── */
+    .bg-grid {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image:
+        linear-gradient(rgba(0,245,255,0.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,245,255,0.055) 1px, transparent 1px);
+      background-size: 64px 64px;
+      animation: grid-drift 18s linear infinite;
+    }
+    @keyframes grid-drift {
+      from { background-position: 0 0; }
+      to   { background-position: 64px 64px; }
+    }
+
+    /* ── Header ──────────────────────────────────────────────── */
+    .mm-header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1rem 2rem;
+      border-bottom: 1px solid rgba(0,245,255,0.1);
+      background: rgba(6,6,15,0.85);
+      backdrop-filter: blur(8px);
+    }
+    .header-logo {
+      font-size: 1.3rem; font-weight: 900; color: #00f5ff; letter-spacing: .12em;
+      text-shadow: 0 0 10px #00f5ff80;
+      text-decoration: none;
+    }
+    .header-right { display: flex; align-items: center; gap: 1rem; }
+
+    /* ── Page layout ─────────────────────────────────────────── */
+    .mm-page {
+      position: relative; z-index: 1;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 2rem;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 6rem 2rem 3rem;
+      min-height: 100vh;
+      align-items: start;
+    }
+
+    /* ── Left sidebar ─────────────────────────────────────────── */
+    .mm-sidebar { display: flex; flex-direction: column; gap: 1.5rem; }
+
+    .mm-panel {
+      background: rgba(10,10,26,0.85);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 3px;
+      padding: 1.25rem 1.4rem;
+    }
+    .mm-panel-title {
+      font-size: .52rem; letter-spacing: .3em;
+      color: rgba(224,224,255,.35); margin-bottom: .9rem;
+    }
+
+    /* Player stats grid */
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem .8rem; }
+    .stat-cell { display: flex; flex-direction: column; gap: 3px; }
+    .stat-lbl { font-size: .43rem; letter-spacing: .22em; color: rgba(224,224,255,.3); }
+    .stat-val { font-size: .85rem; font-weight: 700; letter-spacing: .08em; color: #e0e0ff; }
+    .stat-val--accent { color: #00f5ff; text-shadow: 0 0 6px #00f5ff80; }
+
+    /* Match history */
+    .hist-row {
+      display: grid;
+      grid-template-columns: 80px 40px 40px 1fr 52px;
+      align-items: center;
+      gap: .5rem;
+      padding: .45rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      font-size: .62rem; letter-spacing: .08em;
+    }
+    .hist-row:last-child { border-bottom: none; }
+    .hist-map  { color: rgba(224,224,255,.6); font-size: .55rem; letter-spacing: .12em; }
+    .hist-kd   { color: rgba(224,224,255,.5); }
+    .hist-win  { color: #00f5ff; text-shadow: 0 0 6px #00f5ff80; font-weight: 700; }
+    .hist-loss { color: #ff2d78; text-shadow: 0 0 6px #ff2d7880; font-weight: 700; }
+    .hist-rp-pos { color: #00f5ff; font-size: .58rem; }
+    .hist-rp-neg { color: #ff2d78; font-size: .58rem; }
+    .hist-empty  { font-size: .6rem; color: rgba(224,224,255,.25); letter-spacing: .15em; padding: .5rem 0; }
+
+    /* ── Center panel ─────────────────────────────────────────── */
+    .mm-center {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 2rem; padding-top: 2rem;
+    }
+
+    /* Queue size live counter */
+    .queue-counter {
+      font-size: .65rem; letter-spacing: .3em;
+      color: rgba(224,224,255,.3);
+    }
+    .queue-counter span { color: #00f5ff; font-size: .8rem; font-weight: 700; }
+
+    /* Class selector */
+    .class-selector { display: flex; gap: .75rem; }
+    .class-btn {
+      padding: .5rem 1.1rem; font-size: .62rem; letter-spacing: .25em;
+      background: transparent; border: 1px solid rgba(255,255,255,.12);
+      border-radius: 2px; cursor: pointer; color: rgba(224,224,255,.5);
+      font-family: 'Orbitron', monospace; transition: all .15s;
+    }
+    .class-btn.active-SOLDIER { color: #00f5ff; border-color: #00f5ff; box-shadow: 0 0 10px #00f5ff40; }
+    .class-btn.active-GHOST   { color: #ff2d78; border-color: #ff2d78; box-shadow: 0 0 10px #ff2d7840; }
+    .class-btn.active-WRAITH  { color: #7b2fff; border-color: #7b2fff; box-shadow: 0 0 10px #7b2fff40; }
+
+    /* Find match button */
+    .find-btn {
+      width: 260px; padding: 1.1rem;
+      font-size: 1rem; font-weight: 900; letter-spacing: .4em;
+      background: #00f5ff; color: #000; border: none; border-radius: 2px;
+      cursor: pointer; font-family: 'Orbitron', monospace;
+      box-shadow: 0 0 24px #00f5ff70;
+      transition: box-shadow .15s, transform .1s;
+    }
+    .find-btn:hover { box-shadow: 0 0 40px #00f5ffaa; transform: translateY(-3px); }
+    .find-btn:disabled { opacity: .35; cursor: default; box-shadow: none; transform: none; }
+
+    /* ── Overlays ─────────────────────────────────────────────── */
+    .overlay {
+      position: fixed; inset: 0; z-index: 100;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 1.5rem;
+      background: rgba(6,6,15,0.93);
+      backdrop-filter: blur(6px);
+    }
+    .overlay.hidden { display: none; }
+
+    /* ── Searching overlay ────────────────────────────────────── */
+    .search-title {
+      font-size: clamp(1.2rem, 3vw, 2rem); font-weight: 900; letter-spacing: .25em;
+      color: #00f5ff; text-shadow: 0 0 18px #00f5ff;
+    }
+    .dots::after {
+      content: '';
+      animation: dotdotdot 1.5s steps(4, end) infinite;
+    }
+    @keyframes dotdotdot {
+      0%  { content: ''; }
+      25% { content: '.'; }
+      50% { content: '..'; }
+      75% { content: '...'; }
+    }
+    .search-meta { display: flex; flex-direction: column; align-items: center; gap: .4rem; }
+    .search-pos  { font-size: .7rem; letter-spacing: .25em; color: rgba(224,224,255,.45); }
+    .search-count {
+      font-size: .65rem; letter-spacing: .2em;
+      color: rgba(224,224,255,.3);
+    }
+    .search-count span { color: #00f5ff; }
+    .cancel-btn {
+      margin-top: .5rem;
+      padding: .6rem 2rem; font-size: .65rem; letter-spacing: .3em;
+      background: transparent; color: rgba(224,224,255,.45);
+      border: 1px solid rgba(255,255,255,.15); border-radius: 2px;
+      cursor: pointer; font-family: 'Orbitron', monospace;
+      transition: color .15s, border-color .15s;
+    }
+    .cancel-btn:hover { color: #ff2d78; border-color: #ff2d7870; }
+
+    /* ── Match lobby overlay ──────────────────────────────────── */
+    .lobby-map-name {
+      font-size: clamp(.7rem, 2vw, 1rem); letter-spacing: .5em;
+      color: rgba(224,224,255,.35); margin-bottom: -.5rem;
+    }
+    .lobby-title {
+      font-size: clamp(1.4rem, 4vw, 2.6rem); font-weight: 900; letter-spacing: .2em;
+      color: #fff; text-shadow: 0 0 20px rgba(255,255,255,.4);
+    }
+    .teams-wrap {
+      display: flex; align-items: flex-start; gap: 3rem; margin-top: .5rem;
+    }
+    .team-col { display: flex; flex-direction: column; gap: .6rem; min-width: 200px; }
+    .team-label {
+      font-size: .6rem; letter-spacing: .35em; font-weight: 700;
+      padding-bottom: .5rem; border-bottom: 1px solid rgba(255,255,255,.1);
+    }
+    .team-label.a { color: #00f5ff; text-shadow: 0 0 8px #00f5ff80; }
+    .team-label.b { color: #ff2d78; text-shadow: 0 0 8px #ff2d7880; }
+    .vs-divider {
+      align-self: center;
+      font-size: 1.6rem; font-weight: 900; letter-spacing: .15em;
+      color: rgba(224,224,255,.2);
+    }
+    .lobby-player {
+      display: flex; align-items: center; gap: .65rem;
+      padding: .55rem .7rem;
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(255,255,255,.06);
+      border-radius: 2px;
+    }
+    .lp-class-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .lp-name { font-size: .7rem; letter-spacing: .1em; flex: 1; }
+
+    /* ── Countdown ────────────────────────────────────────────── */
+    .countdown-wrap {
+      display: flex; flex-direction: column; align-items: center; gap: .5rem;
+    }
+    .countdown-label {
+      font-size: .6rem; letter-spacing: .4em; color: rgba(224,224,255,.35);
+    }
+    .countdown-num {
+      font-size: clamp(5rem, 15vw, 9rem); font-weight: 900; line-height: 1;
+      color: #00f5ff; text-shadow: 0 0 40px #00f5ff;
+      animation: cdpulse .85s ease-out;
+    }
+    @keyframes cdpulse {
+      0%   { transform: scale(1.6); opacity: 0; }
+      35%  { opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .countdown-num.replay { animation: none; }
+    .countdown-num.replay { animation: cdpulse .85s ease-out; }
+
+    /* ── Responsive ───────────────────────────────────────────── */
+    @media (max-width: 780px) {
+      .mm-page { grid-template-columns: 1fr; }
+      .mm-sidebar { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="bg-grid" aria-hidden="true"></div>
+
+<!-- ── Header ──────────────────────────────────────────────────── -->
+<header class="mm-header">
+  <a class="header-logo" href="/index.html">NG</a>
+  <div class="header-right">
+    <div id="rank-badge-wrap" style="display:none"></div>
+    <span id="username-label"
+      style="font-size:.65rem;letter-spacing:.18em;color:#7b2fff;text-shadow:0 0 8px #7b2fff;display:none"></span>
+    <a href="/leaderboard.html" class="btn btn-accent" style="font-size:.6rem;padding:.4rem 1rem;">LEADERBOARD</a>
+    <button id="logout-btn" class="btn btn-accent"
+      style="font-size:.6rem;padding:.4rem 1rem;display:none">LOGOUT</button>
+  </div>
+</header>
+
+<!-- ── Main page ────────────────────────────────────────────────── -->
+<div class="mm-page">
+
+  <!-- Left sidebar: stats + match history -->
+  <aside class="mm-sidebar">
+    <div class="mm-panel" id="stats-panel" style="display:none">
+      <div class="mm-panel-title">OPERATIVE STATS</div>
+      <div class="stat-grid">
+        <div class="stat-cell">
+          <span class="stat-lbl">LEVEL</span>
+          <span class="stat-val stat-val--accent" id="p-level">1</span>
+        </div>
+        <div class="stat-cell">
+          <span class="stat-lbl">XP</span>
+          <span class="stat-val" id="p-xp">0</span>
+        </div>
+        <div class="stat-cell">
+          <span class="stat-lbl">KILLS</span>
+          <span class="stat-val" id="p-kills">0</span>
+        </div>
+        <div class="stat-cell">
+          <span class="stat-lbl">K/D</span>
+          <span class="stat-val" id="p-kd">—</span>
+        </div>
+        <div class="stat-cell">
+          <span class="stat-lbl">MATCHES</span>
+          <span class="stat-val" id="p-matches">0</span>
+        </div>
+        <div class="stat-cell">
+          <span class="stat-lbl">WIN RATE</span>
+          <span class="stat-val" id="p-winrate">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="mm-panel">
+      <div class="mm-panel-title">RECENT MATCHES</div>
+      <div id="hist-list">
+        <div class="hist-empty">NO MATCHES PLAYED YET</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Center: find match panel -->
+  <div class="mm-center">
+    <div class="queue-counter">
+      <span id="global-queue-count">—</span> PLAYERS IN QUEUE
+    </div>
+
+    <!-- Class picker -->
+    <div class="class-selector" id="class-selector">
+      <button class="class-btn active-SOLDIER" data-class="SOLDIER">SOLDIER</button>
+      <button class="class-btn" data-class="GHOST">GHOST</button>
+      <button class="class-btn" data-class="WRAITH">WRAITH</button>
+    </div>
+
+    <button class="find-btn" id="find-btn">FIND MATCH</button>
+
+    <p style="font-size:.55rem;letter-spacing:.2em;color:rgba(224,224,255,.2);text-align:center;max-width:320px;margin-top:-.5rem">
+      RANK-BASED MATCHMAKING · UP TO 6 PLAYERS · DEATHMATCH
+    </p>
+  </div>
+</div>
+
+<!-- ── Searching overlay ──────────────────────────────────────── -->
+<div class="overlay hidden" id="ov-searching">
+  <div class="search-title">SEARCHING FOR MATCH<span class="dots"></span></div>
+  <div class="search-meta">
+    <div class="search-pos" id="ov-pos">QUEUE POSITION: #1</div>
+    <div class="search-count"><span id="ov-count">—</span> PLAYERS IN QUEUE</div>
+  </div>
+  <button class="cancel-btn" id="cancel-btn">✕ CANCEL</button>
+</div>
+
+<!-- ── Match lobby overlay ─────────────────────────────────────── -->
+<div class="overlay hidden" id="ov-lobby">
+  <div class="lobby-map-name" id="ov-map">MAP: TERMINAL</div>
+  <div class="lobby-title">MATCH FOUND</div>
+  <div class="teams-wrap" id="ov-teams"></div>
+</div>
+
+<!-- ── Countdown overlay ──────────────────────────────────────── -->
+<div class="overlay hidden" id="ov-countdown">
+  <div class="teams-wrap" id="ov-cd-teams" style="opacity:.25;transform:scale(.9)"></div>
+  <div class="countdown-wrap">
+    <div class="countdown-label">MATCH STARTS IN</div>
+    <div class="countdown-num" id="ov-cd-num">10</div>
+  </div>
+</div>
+
+<!-- ── Scripts ────────────────────────────────────────────────── -->
+<script src="/socket.io/socket.io.js"></script>
+<script type="module">
+import { Auth }            from '/js/Auth.js';
+import { Lobby }           from '/js/Lobby.js';
+import { renderRankBadge } from '/js/RankBadge.js';
+
+// ── Rank helpers (mirrors RankSystem.js) ─────────────────────
+const RANK_TABLE = [
+  { tier: 'BRONZE III',      minRP: 0,    color: '#cd7f32' },
+  { tier: 'BRONZE II',       minRP: 400,  color: '#cd7f32' },
+  { tier: 'BRONZE I',        minRP: 800,  color: '#cd7f32' },
+  { tier: 'SILVER III',      minRP: 1200, color: '#c0c0c0' },
+  { tier: 'SILVER II',       minRP: 1600, color: '#c0c0c0' },
+  { tier: 'SILVER I',        minRP: 2000, color: '#c0c0c0' },
+  { tier: 'GOLD III',        minRP: 2400, color: '#ffd700' },
+  { tier: 'GOLD II',         minRP: 2800, color: '#ffd700' },
+  { tier: 'GOLD I',          minRP: 3200, color: '#ffd700' },
+  { tier: 'PLATINUM III',    minRP: 3600, color: '#00f5ff' },
+  { tier: 'PLATINUM II',     minRP: 4000, color: '#00f5ff' },
+  { tier: 'PLATINUM I',      minRP: 4400, color: '#00f5ff' },
+  { tier: 'DIAMOND III',     minRP: 4800, color: '#b9f2ff' },
+  { tier: 'DIAMOND II',      minRP: 5200, color: '#b9f2ff' },
+  { tier: 'DIAMOND I',       minRP: 5600, color: '#b9f2ff' },
+  { tier: 'MASTER',          minRP: 6000, color: '#ff2d78' },
+  { tier: 'GRANDMASTER',     minRP: 8000, color: '#7b2fff' },
+];
+function getRankInfo(rp = 0) {
+  let entry = RANK_TABLE[0];
+  for (const r of RANK_TABLE) { if (rp >= r.minRP) entry = r; }
+  return entry;
+}
+
+const CLASS_COLORS = { SOLDIER: '#00f5ff', GHOST: '#ff2d78', WRAITH: '#7b2fff' };
+
+// ── Auth ──────────────────────────────────────────────────────
+const auth      = new Auth();
+let   playerData = { userId: null, username: 'Guest', rankPoints: 0, playerClass: 'SOLDIER' };
+
+const logoutBtn      = document.getElementById('logout-btn');
+const usernameLabel  = document.getElementById('username-label');
+const rankBadgeWrap  = document.getElementById('rank-badge-wrap');
+const findBtn        = document.getElementById('find-btn');
+
+async function loadPlayerData() {
+  const token = auth.getToken();
+  if (!token) return;
+  try {
+    const res = await fetch('/auth/me', { headers: { Authorization: 'Bearer ' + token } });
+    if (!res.ok) return;
+    const { username, userId, stats, rank } = await res.json();
+
+    playerData.userId     = userId;
+    playerData.username   = username;
+    playerData.rankPoints = rank ? rank.rank_points : 0;
+
+    usernameLabel.textContent  = username;
+    usernameLabel.style.display = '';
+    logoutBtn.style.display    = '';
+
+    if (rank) {
+      const ri = getRankInfo(rank.rank_points);
+      rankBadgeWrap.innerHTML = '';
+      rankBadgeWrap.appendChild(renderRankBadge(ri.tier, rank.rank_points, 'sm'));
+      rankBadgeWrap.style.display = '';
+    }
+
+    if (stats) {
+      document.getElementById('stats-panel').style.display = '';
+      document.getElementById('p-level').textContent   = stats.level;
+      document.getElementById('p-xp').textContent      = stats.xp.toLocaleString();
+      document.getElementById('p-kills').textContent   = stats.kills;
+      const kd = (stats.kills / Math.max(stats.deaths, 1)).toFixed(2);
+      document.getElementById('p-kd').textContent      = kd;
+      document.getElementById('p-matches').textContent = stats.matches_played;
+      const wr = stats.matches_played > 0
+        ? Math.round(stats.matches_won / stats.matches_played * 100) + '%'
+        : '—';
+      document.getElementById('p-winrate').textContent = wr;
+    }
+
+    await loadHistory(token);
+  } catch (e) {
+    console.warn('loadPlayerData error:', e);
+  }
+}
+
+async function loadHistory(token) {
+  try {
+    const res  = await fetch('/auth/match-history?limit=5', {
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    if (!res.ok) return;
+    const rows = await res.json();
+    const list = document.getElementById('hist-list');
+    if (!rows.length) return;
+    list.innerHTML = rows.map(r => {
+      const won    = r.placement === 1;
+      const rpSign = r.rp_change >= 0 ? '+' : '';
+      return `
+        <div class="hist-row">
+          <span class="hist-map">${r.map_name}</span>
+          <span class="hist-kd">${r.kills}K</span>
+          <span class="hist-kd">${r.deaths}D</span>
+          <span class="${won ? 'hist-win' : 'hist-loss'}">${won ? 'WIN' : 'LOSS'}</span>
+          <span class="${r.rp_change >= 0 ? 'hist-rp-pos' : 'hist-rp-neg'}">${rpSign}${r.rp_change} RP</span>
+        </div>
+      `;
+    }).join('');
+  } catch (e) { /* history non-critical */ }
+}
+
+logoutBtn.addEventListener('click', () => { auth.logout(); });
+
+// ── Class selector ────────────────────────────────────────────
+let selectedClass = localStorage.getItem('ng_class') || 'SOLDIER';
+function setClass(cls) {
+  selectedClass = cls;
+  playerData.playerClass = cls;
+  localStorage.setItem('ng_class', cls);
+  document.querySelectorAll('.class-btn').forEach(b => {
+    b.classList.remove('active-SOLDIER', 'active-GHOST', 'active-WRAITH');
+    if (b.dataset.class === cls) b.classList.add('active-' + cls);
+  });
+}
+setClass(selectedClass);
+document.querySelectorAll('.class-btn').forEach(b =>
+  b.addEventListener('click', () => setClass(b.dataset.class))
+);
+
+// ── Socket + Lobby ────────────────────────────────────────────
+const socket = io({ transports: ['websocket', 'polling'] });
+const lobby  = new Lobby(socket);
+
+// overlay refs
+const ovSearching = document.getElementById('ov-searching');
+const ovLobby     = document.getElementById('ov-lobby');
+const ovCountdown = document.getElementById('ov-countdown');
+
+function showOnly(el) {
+  [ovSearching, ovLobby, ovCountdown].forEach(o => o.classList.add('hidden'));
+  if (el) el.classList.remove('hidden');
+}
+
+// queue:joined
+lobby.onQueueJoined = ({ position }) => {
+  document.getElementById('ov-pos').textContent = `QUEUE POSITION: #${position}`;
+  showOnly(ovSearching);
+  findBtn.disabled = true;
+};
+
+// queue:size — update both the main counter and the searching overlay
+lobby.onQueueSize = ({ count }) => {
+  document.getElementById('global-queue-count').textContent = count;
+  document.getElementById('ov-count').textContent           = count;
+};
+
+// match:lobby
+lobby.onMatchLobby = ({ matchId, map, players }) => {
+  document.getElementById('ov-map').textContent = 'MAP: ' + map;
+
+  const teamA = players.filter(p => p.team === 'A');
+  const teamB = players.filter(p => p.team === 'B');
+
+  function playerRow(p) {
+    const ri    = getRankInfo(p.rankPoints);
+    const color = CLASS_COLORS[p.playerClass] || '#e0e0ff';
+    const isMe  = p.username === playerData.username;
+
+    const row = document.createElement('div');
+    row.className = 'lobby-player';
+
+    const dot = document.createElement('div');
+    dot.className = 'lp-class-dot';
+    dot.style.cssText = `background:${color};box-shadow:0 0 6px ${color}`;
+
+    const name = document.createElement('span');
+    name.className = 'lp-name';
+    name.innerHTML = p.username + (isMe ? ' <span style="color:#ffd700;font-size:.5rem">YOU</span>' : '');
+
+    const badge = renderRankBadge(ri.tier, null, 'sm');
+
+    row.append(dot, name, badge);
+    return row.outerHTML;
+  }
+
+  // Build teams HTML using DOM then convert to strings for simplicity
+  function buildTeamHTML(players) {
+    return players.map(p => {
+      const ri    = getRankInfo(p.rankPoints);
+      const color = CLASS_COLORS[p.playerClass] || '#e0e0ff';
+      const isMe  = p.username === playerData.username;
+      const badge = renderRankBadge(ri.tier, null, 'sm');
+      const badgeHtml = badge.outerHTML;
+      return `
+        <div class="lobby-player">
+          <div class="lp-class-dot" style="background:${color};box-shadow:0 0 6px ${color}"></div>
+          <span class="lp-name">${p.username}${isMe ? ' <span style="color:#ffd700;font-size:.5rem">YOU</span>' : ''}</span>
+          ${badgeHtml}
+        </div>`;
+    }).join('');
+  }
+
+  const teamsHTML = `
+    <div class="team-col">
+      <div class="team-label a">TEAM A</div>
+      ${buildTeamHTML(teamA)}
+    </div>
+    <div class="vs-divider">VS</div>
+    <div class="team-col">
+      <div class="team-label b">TEAM B</div>
+      ${buildTeamHTML(teamB)}
+    </div>
+  `;
+  document.getElementById('ov-teams').innerHTML    = teamsHTML;
+  document.getElementById('ov-cd-teams').innerHTML = teamsHTML;
+
+  showOnly(ovLobby);
+};
+
+// match:countdown
+lobby.onCountdown = ({ seconds }) => {
+  showOnly(ovCountdown);
+  const el = document.getElementById('ov-cd-num');
+  el.textContent = seconds;
+  el.classList.remove('replay');
+  void el.offsetWidth;
+  el.classList.add('replay');
+};
+
+// match:start → store data and go to game
+lobby.onMatchStart = ({ matchId, map, players }) => {
+  const myEntry = players?.find(p => p.username === playerData.username);
+  sessionStorage.setItem('ng_match', JSON.stringify({
+    matchId, map,
+    team:        myEntry?.team  || 'A',
+    playerClass: myEntry?.playerClass || selectedClass,
+  }));
+  if (myEntry?.playerClass) localStorage.setItem('ng_class', myEntry.playerClass);
+  window.location.href = '/game.html';
+};
+
+// ── Find match button ─────────────────────────────────────────
+findBtn.addEventListener('click', () => {
+  if (!auth.isLoggedIn()) {
+    auth.showModal(() => {
+      loadPlayerData().then(() => {
+        lobby.joinQueue({ ...playerData, playerClass: selectedClass });
+      });
+    });
+    return;
+  }
+  lobby.joinQueue({ ...playerData, playerClass: selectedClass });
+});
+
+document.getElementById('cancel-btn').addEventListener('click', () => {
+  lobby.leaveQueue();
+  showOnly(null);
+  findBtn.disabled = false;
+});
+
+socket.on('disconnect', () => {
+  showOnly(null);
+  findBtn.disabled = false;
+});
+
+// ── Init ──────────────────────────────────────────────────────
+loadPlayerData();
+</script>
+
+</body>
+</html>

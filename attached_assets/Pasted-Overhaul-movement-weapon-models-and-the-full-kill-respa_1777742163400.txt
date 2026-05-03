@@ -1,0 +1,456 @@
+Overhaul movement, weapon models, and the full kill/respawn loop in NEON GRID.
+This touches Controls.js, CharacterModel.js, SoundSystem.js, Game.js, and GameServer.js.
+Do not break existing multiplayer sync or map collision.
+
+─────────────────────────────────────────
+SECTION 1 — REALISTIC FPS MOVEMENT
+─────────────────────────────────────────
+
+Rewrite the movement system in Controls.js completely. 
+The current movement feels floaty and instant. Replace it with this:
+
+SPEED VALUES:
+  walkSpeed   = 5.5  units/sec
+  sprintSpeed = 8.5  units/sec  (hold Shift)
+  crouchSpeed = 2.8  units/sec  (hold C or Ctrl)
+  airSpeed    = 3.5  units/sec  (reduced control while airborne)
+
+ACCELERATION & FRICTION:
+  Do NOT set velocity directly from input. Instead use acceleration/deceleration:
+  - groundAccel  = 60  (fast snap to speed when key held — responsive but not instant)
+  - groundFrict  = 50  (fast stop when key released — no sliding)
+  - airAccel     = 18  (sluggish mid-air direction change — realistic)
+  - airFrict     = 4   (minimal air friction — momentum carries)
+
+  Each frame:
+    wishDir = normalized input direction (from WASD in camera-space)
+    if grounded:
+      velocity.x = lerp toward (wishDir.x * currentSpeed) at groundAccel * delta
+      velocity.z = lerp toward (wishDir.z * currentSpeed) at groundAccel * delta
+      apply groundFrict when no input: velocity.xz *= max(0, 1 - groundFrict * delta)
+    else (airborne):
+      velocity.x += wishDir.x * airAccel * delta
+      velocity.z += wishDir.z * airAccel * delta
+      clamp horizontal speed to airSpeed
+      apply airFrict: velocity.xz *= max(0, 1 - airFrict * delta)
+
+GRAVITY & JUMPING:
+  gravity     = -22  units/sec²
+  jumpForce   = 7.5  units/sec  (gives about 1.3 unit jump height — realistic)
+  eyeHeight   = 1.65 units (camera Y when standing)
+  crouchHeight= 1.1  units (camera Y when crouched)
+
+  Gravity applied every frame: velocity.y += gravity * delta
+  Ground check: raycast straight down 0.05 units below player feet.
+    If hit: set grounded=true, velocity.y = max(0, velocity.y)
+  Jump: only if grounded, set velocity.y = jumpForce, grounded=false
+
+  Smooth crouch: lerp camera Y between eyeHeight and crouchHeight at speed 10/s
+
+MOUSE LOOK:
+  Horizontal sensitivity = 0.0018  (multiply mouseDelta.x by this for yaw)
+  Vertical sensitivity   = 0.0018
+  Pitch clamp: -80 to +80 degrees
+  Apply yaw to the player's Y rotation (whole body turns)
+  Apply pitch to camera only (head tilts, body stays upright)
+  Store mouseSensitivity in localStorage, default 0.0018
+
+HEAD BOB:
+  When grounded and moving, apply a subtle head bob to camera Y:
+    bobSpeed = 10 (walk) or 14 (sprint)
+    bobAmount = 0.028 (walk) or 0.042 (sprint)
+    camera.position.y += sin(bobTimer * bobSpeed) * bobAmount
+    bobTimer += delta when moving, reset toward 0 when stopped
+  When airborne or standing still: smoothly damp bob back to 0
+  This makes walking feel physical without being nauseating
+
+EMIT movement to server every 50ms (not every frame):
+  Send { x, y, z, rotY, crouching }
+
+─────────────────────────────────────────
+SECTION 2 — CLASS WEAPON DEFINITIONS
+─────────────────────────────────────────
+
+In Classes.js add a weaponModel field to each class defining geometry specs.
+These will be used by the weapon builder in Section 3.
+
+SOLDIER — weapon: AK-47 style assault rifle
+  fireRate:    620 rpm  →  97ms between shots
+  damage:      28
+  magazineSize: 30
+  reloadTime:  2400ms
+  recoilKick:  { z: 0.06, xRot: -0.09 }
+  sound:       'ak47'   (defined in Section 4)
+
+GHOST — weapon: compact SMG
+  fireRate:    900 rpm  →  67ms between shots
+  damage:      16
+  magazineSize: 40
+  reloadTime:  1800ms
+  recoilKick:  { z: 0.03, xRot: -0.05 }
+  sound:       'smg'
+
+WRAITH — weapon: bolt-action sniper rifle
+  fireRate:    45 rpm   →  1333ms between shots
+  damage:      95
+  magazineSize: 5
+  reloadTime:  3200ms
+  recoilKick:  { z: 0.12, xRot: -0.18 }
+  sound:       'sniper'
+
+─────────────────────────────────────────
+SECTION 3 — WEAPON MODELS (Three.js geometry)
+─────────────────────────────────────────
+
+Create public/js/WeaponBuilder.js with a buildWeapon(className) function
+that returns a THREE.Group shaped like the class weapon.
+All parts use MeshStandardMaterial. Each weapon has its own color palette.
+
+Colors used across all weapons:
+  bodyColor:   0x1a1a2e  (dark navy)
+  metalColor:  0x2a2a3e  (slightly lighter metal)
+  emissColor:  class color (SOLDIER=0x00f5ff, GHOST=0xff2d78, WRAITH=0x7b2fff)
+  emissIntensity: 0.5
+
+Add edge outlines to every part (EdgesGeometry + LineSegments, emissColor, opacity 0.4).
+
+── buildAK47() — SOLDIER ──
+
+Build an AK-47 shaped rifle. All positions are relative to the group root.
+The group root sits at the pistol grip so it hangs naturally in the hand.
+
+  Receiver (main body):
+    BoxGeometry(0.055, 0.07, 0.32)  at (0, 0, -0.05)
+    color: bodyColor
+
+  Barrel:
+    BoxGeometry(0.022, 0.022, 0.28)  at (0, 0.015, -0.32)
+    color: metalColor, emissive: emissColor, intensity 0.3
+
+  Muzzle brake:
+    BoxGeometry(0.032, 0.032, 0.04)  at (0, 0.015, -0.46)
+    color: metalColor
+
+  Handguard (wood-look lower):
+    BoxGeometry(0.04, 0.038, 0.16)   at (0, -0.012, -0.22)
+    color: 0x3d1a00  (dark brown)
+
+  Gas tube (above barrel):
+    BoxGeometry(0.015, 0.015, 0.18)  at (0, 0.04, -0.22)
+    color: metalColor
+
+  Magazine (curved, simulated with 3 stacked boxes at slight angles):
+    Box 1: BoxGeometry(0.038, 0.07, 0.055)  at (0, -0.085, -0.04)  color: bodyColor
+    Box 2: BoxGeometry(0.035, 0.04, 0.048)  at (0, -0.13,  -0.03)  rotX: 0.12
+    Box 3: BoxGeometry(0.032, 0.025, 0.04)  at (0, -0.16,  -0.01)  rotX: 0.2
+    (these 3 together look like a curved AK magazine)
+
+  Pistol grip:
+    BoxGeometry(0.038, 0.075, 0.045)  at (0, -0.075, 0.06)  rotX: 0.2
+    color: 0x1a0a00  (dark grip)
+
+  Stock:
+    BoxGeometry(0.038, 0.042, 0.19)   at (0, 0.005, 0.18)   color: 0x3d1a00
+    BoxGeometry(0.038, 0.065, 0.02)   at (0, -0.02, 0.27)   color: 0x3d1a00
+    (forms the classic AK folding stock shape)
+
+  Iron sight front:
+    BoxGeometry(0.008, 0.025, 0.008)  at (0, 0.055, -0.38)  color: metalColor
+  Iron sight rear:
+    BoxGeometry(0.022, 0.018, 0.008)  at (0, 0.052, 0.01)   color: metalColor
+    with a 0.01-wide gap in the center (two thin boxes side by side)
+
+  Neon accent strip (emissive):
+    BoxGeometry(0.004, 0.004, 0.28)   at (0.028, 0, -0.05)  color: emissColor, emissIntensity: 0.9
+    (a thin glowing strip along the side of the receiver — the cyberpunk touch)
+
+── buildSMG() — GHOST ──
+
+Compact futuristic SMG. Shorter and wider than AK, very aggressive look.
+
+  Receiver:
+    BoxGeometry(0.055, 0.072, 0.22)  at (0, 0, -0.02)  bodyColor
+
+  Barrel:
+    BoxGeometry(0.02, 0.02, 0.15)    at (0, 0.016, -0.195)  metalColor
+    emissive: emissColor, intensity 0.4
+
+  Muzzle:
+    BoxGeometry(0.03, 0.03, 0.025)   at (0, 0.016, -0.27)   metalColor
+
+  Handguard with vents (3 thin cuts represented by darker strips):
+    BoxGeometry(0.048, 0.04, 0.12)   at (0, -0.01, -0.14)   bodyColor
+    3 x BoxGeometry(0.05, 0.006, 0.012) evenly spaced along handguard  color: 0x080810
+
+  Magazine (straight, large capacity):
+    BoxGeometry(0.04, 0.1, 0.042)    at (0, -0.1, -0.01)    bodyColor
+
+  Grip:
+    BoxGeometry(0.042, 0.072, 0.044) at (0, -0.075, 0.07)   rotX: 0.15  color: 0x100820
+
+  Stock (folded wire look — 3 thin rods):
+    BoxGeometry(0.008, 0.008, 0.15)  at (-0.018, 0.01, 0.16)  metalColor
+    BoxGeometry(0.008, 0.008, 0.15)  at ( 0.018, 0.01, 0.16)  metalColor
+    BoxGeometry(0.044, 0.008, 0.008) at (0, 0.01, 0.23)       metalColor
+
+  Neon accent — double stripe:
+    BoxGeometry(0.004, 0.004, 0.20)  at ( 0.028, 0.012, -0.02)  emissColor, intensity 1.0
+    BoxGeometry(0.004, 0.004, 0.20)  at (-0.028, 0.012, -0.02)  emissColor, intensity 1.0
+
+── buildSniper() — WRAITH ──
+
+Long bolt-action sniper. Imposing and precise.
+
+  Receiver:
+    BoxGeometry(0.055, 0.068, 0.28)  at (0, 0, 0.02)  bodyColor
+
+  Barrel (long):
+    BoxGeometry(0.02, 0.02, 0.46)    at (0, 0.016, -0.31)  metalColor
+    emissive: emissColor, intensity 0.25
+
+  Muzzle brake (wide):
+    BoxGeometry(0.036, 0.028, 0.045) at (0, 0.016, -0.535)  metalColor
+
+  Scope body:
+    BoxGeometry(0.032, 0.032, 0.18)  at (0, 0.065, -0.04)   color: 0x111120
+    Scope lens front: CylinderGeometry(0.016, 0.016, 0.01, 12) at (0, 0.065, -0.13)
+      rotX: 90deg, color: 0x001133, emissive: 0x0033ff, intensity 0.8
+    Scope lens rear:  CylinderGeometry(0.014, 0.014, 0.01, 12) at (0, 0.065, 0.05)
+      rotX: 90deg, same material
+    Scope mount: 2 x BoxGeometry(0.05, 0.018, 0.022) at front and rear of scope, metalColor
+
+  Bolt handle:
+    BoxGeometry(0.008, 0.008, 0.055) at (0.04, 0.008, 0.06)  rotZ: -0.5  metalColor
+    SphereGeometry(0.014, 6, 6) at end of bolt handle, metalColor
+
+  Handguard:
+    BoxGeometry(0.042, 0.038, 0.2)   at (0, -0.01, -0.18)   color: 0x2a1a0a
+
+  Stock (long precision stock):
+    BoxGeometry(0.04, 0.048, 0.28)   at (0, -0.004, 0.22)   color: 0x2a1a0a
+    Cheek rest: BoxGeometry(0.038, 0.025, 0.1) at (0, 0.035, 0.18)  same color
+
+  Bipod legs (folded up, decorative):
+    BoxGeometry(0.008, 0.06, 0.008)  at (-0.022, -0.04, -0.28)  metalColor
+    BoxGeometry(0.008, 0.06, 0.008)  at ( 0.022, -0.04, -0.28)  metalColor
+
+  Magazine (small, 5-round):
+    BoxGeometry(0.036, 0.055, 0.038) at (0, -0.075, 0.0)    bodyColor
+
+  Grip:
+    BoxGeometry(0.038, 0.078, 0.044) at (0, -0.078, 0.1)    rotX: 0.18  color: 0x1a0a00
+
+  Neon accent (scope rail):
+    BoxGeometry(0.004, 0.004, 0.26)  at (0.028, 0.04, -0.02)  emissColor, intensity 0.8
+
+── FIRST-PERSON VIEWMODEL ──
+
+In Game.js, replace the old viewmodel gun with the output of WeaponBuilder.buildWeapon(playerClass):
+
+Position the weapon group at: x=0.2, y=-0.22, z=-0.35 in weapon space
+Rotation: rotZ=-0.04, rotX=0.03
+
+Add to weaponScene (not main scene) so it renders on top without depth clipping.
+
+On class change (if player selects a new class): dispose old viewmodel, build new one.
+
+─────────────────────────────────────────
+SECTION 4 — CLASS-SPECIFIC WEAPON SOUNDS
+─────────────────────────────────────────
+
+Rewrite SoundSystem.js to have per-class gunshot sounds using Web Audio API only.
+
+playGunshot(weaponType):  accepts 'ak47', 'smg', or 'sniper'
+
+'ak47' — full rifle crack, mid-low frequency, sharp transient:
+  a) Crack tone: OscillatorNode square, 160hz → 80hz sweep over 90ms, gain 0.7 → 0
+  b) Body noise: white noise buffer 0.2s, BandpassFilter center 400hz Q=1.5, gain 0.5 → 0 over 180ms
+  c) Sub punch: OscillatorNode sine, 80hz → 30hz over 70ms, gain 0.6 → 0
+  d) Reverb tail: white noise buffer 0.4s, LowpassFilter 600hz, gain 0.15 → 0 over 400ms
+  Total character: punchy, authoritative, a bit bassy
+
+'smg' — fast light crack, higher pitch, very short:
+  a) Crack: OscillatorNode square, 280hz → 140hz over 55ms, gain 0.5 → 0
+  b) Noise: white noise 0.1s, HighpassFilter 500hz, gain 0.4 → 0 over 90ms
+  c) No sub. No reverb tail.
+  Total character: snappy, quick, light
+
+'sniper' — massive loud crack with long echo tail:
+  a) Initial crack: OscillatorNode sawtooth, 120hz → 40hz over 40ms, gain 0.9 → 0
+  b) Pressure wave: white noise 0.08s, LowpassFilter 200hz, gain 0.8 → 0 over 60ms
+  c) Echo tail: white noise 1.2s, BandpassFilter 300hz Q=0.5, gain 0.3 → 0 over 1200ms (long decay)
+  d) Sub boom: OscillatorNode sine, 50hz → 20hz over 100ms, gain 0.7 → 0
+  Total character: thunderous, echoey, intimidating
+
+playReload(weaponType):
+  'ak47'  — two mechanical clicks: 2 x short noise burst (30ms, 0.3 gain) 400ms apart
+  'smg'   — magazine snap: one sharp click (20ms) + soft plastic thud (40ms) 200ms later
+  'sniper'— bolt action: clunk (60ms low noise) + slide (80ms filtered noise) + clunk (60ms) over 600ms
+
+All sounds: call audio.resume() on first user click (browser autoplay policy).
+
+─────────────────────────────────────────
+SECTION 5 — FULLY VISIBLE PLAYER MODELS
+─────────────────────────────────────────
+
+Update CharacterModel.js and Game.js so remote players are fully detailed
+and hold their class-specific weapon visibly.
+
+buildCharacterModel(classColor, playerClass) — update signature:
+
+The character group has these parts (all visible, no invisible parts):
+
+  Head:
+    BoxGeometry(0.52, 0.52, 0.52) at y=1.55
+    color: 0x0d0d22, emissive: classColor, emissIntensity: 0.3
+    Visor (face): PlaneGeometry(0.3, 0.16) at z=0.27, y=1.58
+      MeshBasicMaterial emissive classColor, opacity 0.7, transparent — looks like a glowing visor
+
+  Neck:
+    BoxGeometry(0.18, 0.14, 0.18) at y=1.23  bodyColor
+
+  Torso:
+    BoxGeometry(0.72, 0.78, 0.36) at y=0.88  bodyColor
+    Chest plate: BoxGeometry(0.5, 0.35, 0.04) at z=0.19, y=0.95
+      color: 0x0a0a1a, emissive: classColor, emissIntensity: 0.5
+
+  Left upper arm:  BoxGeometry(0.2, 0.32, 0.2)   at x=-0.46, y=1.04
+  Left lower arm:  BoxGeometry(0.17, 0.28, 0.17)  at x=-0.46, y=0.72
+  Left hand:       BoxGeometry(0.16, 0.14, 0.14)  at x=-0.46, y=0.52
+
+  Right upper arm: BoxGeometry(0.2, 0.32, 0.2)   at x=0.46, y=1.04
+  Right lower arm: BoxGeometry(0.17, 0.28, 0.17)  at x=0.46, y=0.72
+  Right hand:      BoxGeometry(0.16, 0.14, 0.14)  at x=0.46, y=0.52
+
+  Left thigh:  BoxGeometry(0.26, 0.36, 0.26)  at x=-0.2, y=0.36
+  Left shin:   BoxGeometry(0.22, 0.34, 0.22)  at x=-0.2, y=0.0
+  Left foot:   BoxGeometry(0.24, 0.1, 0.32)   at x=-0.2, y=-0.19, z=0.04
+
+  Right thigh: BoxGeometry(0.26, 0.36, 0.26)  at x=0.2,  y=0.36
+  Right shin:  BoxGeometry(0.22, 0.34, 0.22)  at x=0.2,  y=0.0
+  Right foot:  BoxGeometry(0.24, 0.1, 0.32)   at x=0.2,  y=-0.19, z=0.04
+
+All body parts: color 0x0d0d22, emissive classColor, emissIntensity 0.15
+Edge outlines on every part: classColor, opacity 0.3
+
+WEAPON HELD BY REMOTE PLAYER:
+  Build the weapon using WeaponBuilder.buildWeapon(playerClass)
+  Scale it to 0.75 (slightly smaller than viewmodel)
+  Attach it to a 'weaponAnchor' child of the right hand group
+  Position: x=0.08, y=-0.18, z=-0.22 relative to right hand
+  Rotation: rotX=-0.15 (angled forward like held in shooting stance)
+
+RIGHT ARM AIM POSE:
+  When remote player is alive, rotate both right arm segments forward:
+  Right upper arm: rotX = -0.7 (raised, aiming forward)
+  Right lower arm: rotX = -0.4 (extended out)
+  This makes the character visually appear to be holding the gun up
+
+LEAN ANIMATION:
+  When remote player is moving (velocity > 0.5), apply slight body tilt:
+  Lean torso and head forward by rotX = 0.05 + speed * 0.008
+  Return to upright when stopped (lerp at speed 5)
+
+USERNAME LABEL:
+  THREE.Sprite with canvas texture — 256x64 canvas
+  Fill: rgba(0,0,0,0.6)
+  Text: player username, bold 28px monospace, classColor
+  Level badge: small square at left, class color fill, white level number
+  Position: y=2.2 above character root (above head)
+  Scale: (1.8, 0.45, 1) — stays facing camera (sprite auto-faces camera)
+
+HP BAR (above username):
+  Two overlapping sprites: background bar (dark) and fill bar (classColor)
+  Fill width = (currentHp / maxHp) * barWidth
+  Update every time 'player:damaged' or 'player:respawned' fires
+  Position: y=2.5 above root
+  Hide when HP is full (clean, not cluttered)
+
+DEATH STATE:
+  When remote player dies: rotate entire group on Z axis 90 degrees over 400ms
+  (fall over sideways)
+  Fade opacity to 0 over 600ms
+  Remove group from scene after 1 second
+
+─────────────────────────────────────────
+SECTION 6 — KILL / RESPAWN LOOP (confirm fully working)
+─────────────────────────────────────────
+
+Verify and fix the complete kill/respawn flow end to end.
+
+SERVER — GameServer.js:
+
+On 'player:shoot' received:
+  1. Get shooter's position and direction from event data
+  2. For every OTHER player:
+     a. Compute ray-sphere intersection (sphere center = player pos, radius = 0.65)
+     b. If hit AND player is alive AND player is not in spawnProtection:
+        - Apply damage: target.hp -= CLASSES[shooter.class].damage
+        - Emit 'player:hit' to SHOOTER: { targetId, damage, newHp: target.hp }
+        - Emit 'player:damaged' to TARGET: { shooterId, damage, newHp: target.hp, hitPos }
+        - If target.hp <= 0:
+            * Set target.alive = false
+            * Emit 'player:killed' to ALL: { killerId, killerName, victimId, victimName, killerClass }
+            * Update DB: killer +1 kill +100xp, victim +1 death
+            * After 3000ms: respawn target
+              - Pick spawn point farthest from all alive players
+              - Set target.hp = CLASSES[target.class].hp, target.alive = true
+              - Set target.spawnProtection = true, clear after 2500ms
+              - Emit 'player:respawned' to ALL: { id, x, y, z, hp, class }
+  3. Break after first hit (one bullet, one target)
+
+CLIENT — Network.js listens and delegates:
+
+'player:hit'      → soundSystem.playHitConfirm(), bulletSystem.onHit(hitPos), hud.showHitMarker()
+'player:damaged'  → soundSystem.playTakeDamage(), hud.flashDamageVignette(damage), hud.updateHP(newHp)
+'player:killed'   → if victimId === myId: hud.showDeathScreen(), disable shooting input
+                     soundSystem.playKill() if killerId === myId
+                     killFeed.addEntry(killerName, victimName, killerClass)
+'player:respawned'→ if id === myId: hud.hideDeathScreen(), re-enable shooting input, hud.updateHP(hp), 
+                     show blinking shield icon for 2.5s
+                    if id !== myId: remove fallen model, place fresh character model at new position
+
+DEATH SCREEN (Hud.js):
+  Full screen darkened overlay (rgba 0,0,0,0.7)
+  Center text: "YOU WERE ELIMINATED" in large neon pink, glitchy flicker animation
+  Below: "KILLED BY: [killerName]" in white
+  Below: countdown "RESPAWNING IN 3... 2... 1..." ticking down each second
+  Do NOT show a respawn button — it is automatic after 3 seconds
+  Disable all player input (movement + shooting) while dead
+  Re-enable all input the moment respawn fires
+
+SPAWN PROTECTION VISUAL:
+  For 2.5 seconds after respawn, draw a pulsing sphere around local player camera:
+  SphereGeometry(1.0, 12, 12), MeshBasicMaterial cyan, transparent true,
+  opacity pulses: 0.08 + Math.sin(Date.now() * 0.008) * 0.06, wireframe true
+  Remove sphere when protection ends
+
+HIT MARKER (crosshair):
+  On landing a hit: crosshair briefly turns pink, scale up 1.3x, back to normal over 150ms
+  On kill:          crosshair flashes white, stays large for 300ms, with skull icon flash at center
+
+─────────────────────────────────────────
+ACCEPTANCE CRITERIA
+─────────────────────────────────────────
+
+✓ Walking speed feels like a real FPS — not too fast, not sluggish
+✓ Stopping is near-instant (no ice-skating)
+✓ Jumping height is realistic (~1.3 units), no bunny-hopping abuse
+✓ Head bob is subtle and smooth when walking
+✓ Crouching lowers the camera visibly and slows movement
+✓ The viewmodel gun matches the player's selected class
+✓ SOLDIER sees an AK-47 style rifle bottom-right
+✓ GHOST sees a compact SMG
+✓ WRAITH sees a long sniper rifle with scope
+✓ Each gun has a distinct gunshot sound — AK bassy, SMG snappy, Sniper thunderous
+✓ Remote players appear as full humanoid models holding their class weapon
+✓ Remote player weapon matches their class (not a generic box)
+✓ HP bar floats above remote player heads and updates on damage
+✓ Remote players visibly fall over when killed, then disappear
+✓ Shooting a player registers damage on the server
+✓ Getting a kill shows the kill feed entry and plays kill sound
+✓ Being killed shows the death screen with killer name and countdown
+✓ Player automatically respawns after exactly 3 seconds at a valid spawn point
+✓ Spawn protection shield is visible for 2.5 seconds post-respawn
+✓ Dead players cannot shoot (input disabled during death screen)
+✓ All of the above works with 2+ players in the same session simultaneously

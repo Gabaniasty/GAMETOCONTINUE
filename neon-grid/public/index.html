@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEON GRID</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    /* ── Reset & base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body { overflow: hidden; }
+
+    /* ── Three.js background canvas ── */
+    #bg-canvas {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
+      z-index: 0;
+      display: block;
+    }
+
+    /* ── Dark UI overlay over canvas ── */
+    .ui-layer {
+      position: fixed; inset: 0;
+      background: linear-gradient(
+        135deg,
+        rgba(2,2,10,0.82) 0%,
+        rgba(2,2,10,0.65) 50%,
+        rgba(2,2,10,0.78) 100%
+      );
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* ── Header (top bar) ── */
+    .menu-header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid rgba(0,245,255,0.08);
+    }
+    .header-logo {
+      font-family: 'Orbitron', sans-serif; font-weight: 900;
+      font-size: 1.1rem; color: #00f5ff; letter-spacing: 0.18em;
+      text-shadow: 0 0 8px #00f5ff, 0 0 16px rgba(0,245,255,0.4);
+      user-select: none;
+    }
+    .header-user {
+      display: flex; align-items: center; gap: .9rem;
+    }
+    .header-user.hidden { display: none; }
+    .header-username {
+      font-family: 'Orbitron', sans-serif; font-size: .65rem;
+      letter-spacing: .18em; color: #7b2fff;
+      text-shadow: 0 0 8px #7b2fff;
+    }
+    .header-rp {
+      font-family: 'Orbitron', sans-serif; font-size: .58rem;
+      letter-spacing: .12em; color: rgba(224,224,255,.45);
+    }
+
+    /* ── Left nav ── */
+    .menu-nav {
+      position: fixed; left: 2.5rem; top: 50%; z-index: 10;
+      transform: translateY(-50%);
+      display: flex; flex-direction: column; gap: .5rem;
+    }
+    .nav-item {
+      font-family: 'Orbitron', sans-serif; font-weight: 700;
+      font-size: .75rem; letter-spacing: .3em; text-transform: uppercase;
+      color: rgba(224,224,255,.65);
+      padding: .7rem 1.4rem;
+      border: 1px solid rgba(0,245,255,0.22);
+      background: rgba(2,2,10,0.45);
+      cursor: pointer; position: relative; overflow: hidden;
+      transition: color .18s, border-color .18s, box-shadow .18s;
+      user-select: none; text-decoration: none; display: block;
+    }
+    .nav-item::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: #00f5ff;
+      transform: translateX(-101%);
+      transition: transform .22s cubic-bezier(.4,0,.2,1);
+      z-index: -1;
+    }
+    .nav-item:hover { color: #000; border-color: #00f5ff; box-shadow: 0 0 18px rgba(0,245,255,0.35); }
+    .nav-item:hover::before { transform: translateX(0); }
+    .nav-item:active { transform: scale(0.97); }
+    .nav-item.hidden { display: none; }
+    .nav-item.nav-logout { border-color: rgba(255,45,120,0.3); color: rgba(255,45,120,.6); }
+    .nav-item.nav-logout::before { background: #ff2d78; }
+    .nav-item.nav-logout:hover { border-color: #ff2d78; box-shadow: 0 0 18px rgba(255,45,120,0.35); }
+
+    /* ── Center content ── */
+    .menu-center {
+      position: fixed; top: 50%; left: 50%; z-index: 10;
+      transform: translate(-50%, -50%);
+      display: flex; flex-direction: column; align-items: center;
+      gap: .75rem; text-align: center;
+      pointer-events: none;
+    }
+    .menu-title {
+      font-family: 'Orbitron', sans-serif; font-weight: 900;
+      font-size: clamp(3rem, 9vw, 6.5rem);
+      letter-spacing: 0.14em; line-height: 1; color: #00f5ff;
+      animation: title-pulse 3s ease-in-out infinite;
+    }
+    @keyframes title-pulse {
+      0%,100% { text-shadow: 0 0 12px #00f5ff, 0 0 24px #00f5ff; }
+      50%      { text-shadow: 0 0 24px #00f5ff, 0 0 48px #00f5ff, 0 0 72px rgba(0,245,255,0.35); }
+    }
+    .menu-tagline {
+      font-family: 'Orbitron', sans-serif; font-size: clamp(.7rem, 2vw, .95rem);
+      font-weight: 400; letter-spacing: .5em; text-transform: uppercase;
+      color: #ff2d78; text-shadow: 0 0 8px #ff2d78;
+    }
+
+    /* ── Server status (bottom-left) ── */
+    .server-status {
+      position: fixed; bottom: 1.5rem; left: 2.5rem; z-index: 10;
+      display: flex; align-items: center; gap: .6rem;
+      font-family: 'Orbitron', sans-serif; font-size: .52rem;
+      letter-spacing: .18em; color: rgba(224,224,255,.35);
+    }
+    .status-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #00f5ff; box-shadow: 0 0 6px #00f5ff;
+      animation: status-pulse 2s ease-in-out infinite;
+    }
+    .status-dot.offline { background: #ff2d78; box-shadow: 0 0 6px #ff2d78; }
+    @keyframes status-pulse {
+      0%,100% { opacity: 1; } 50% { opacity: .4; }
+    }
+
+    /* ── Footer ── */
+    .menu-footer {
+      position: fixed; bottom: 1.5rem; right: 2.5rem; z-index: 10;
+      font-family: 'Orbitron', sans-serif; font-size: .48rem;
+      letter-spacing: .2em; color: rgba(224,224,255,.2);
+    }
+
+    /* ════════════════════════════════════════════════════
+       Settings modal
+    ════════════════════════════════════════════════════ */
+    .settings-backdrop {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(2,2,10,0.6);
+      backdrop-filter: blur(4px);
+      transition: opacity .3s;
+    }
+    .settings-backdrop.hidden { opacity: 0; pointer-events: none; }
+
+    .settings-modal {
+      position: fixed; top: 0; right: 0; bottom: 0; z-index: 201;
+      width: min(420px, 92vw);
+      background: rgba(4,4,16,0.97);
+      border-left: 1px solid rgba(0,245,255,0.15);
+      display: none; flex-direction: column;
+      transform: translateX(105%);
+      transition: transform .25s cubic-bezier(.4,0,.2,1);
+      overflow: hidden;
+    }
+    .settings-modal.ready { display: flex; }
+    .settings-modal.open  { transform: translateX(0); }
+
+    /* Scrollable body inside modal — header stays fixed at top */
+    .settings-body {
+      flex: 1 1 auto;
+      overflow-y: auto;
+    }
+
+    .settings-header {
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1.5rem 1.75rem 1rem;
+      border-bottom: 1px solid rgba(0,245,255,0.1);
+    }
+    .settings-title {
+      font-family: 'Orbitron', sans-serif; font-weight: 900;
+      font-size: .8rem; letter-spacing: .3em; color: #00f5ff;
+      text-shadow: 0 0 8px #00f5ff;
+    }
+    .settings-close {
+      background: none; border: none; cursor: pointer;
+      font-size: 1rem; color: rgba(224,224,255,.4);
+      font-family: 'Orbitron', sans-serif; transition: color .15s;
+      padding: .2rem .4rem;
+    }
+    .settings-close:hover { color: #ff2d78; }
+
+    .settings-section {
+      padding: 1.25rem 1.75rem;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .settings-section-title {
+      font-family: 'Orbitron', sans-serif; font-size: .52rem;
+      letter-spacing: .28em; color: rgba(0,245,255,.5);
+      margin-bottom: 1rem;
+    }
+    .settings-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 1rem; margin-bottom: .85rem;
+    }
+    .settings-row:last-child { margin-bottom: 0; }
+    .settings-label {
+      font-family: 'Orbitron', sans-serif; font-size: .54rem;
+      letter-spacing: .15em; color: rgba(224,224,255,.65);
+      white-space: nowrap;
+    }
+    .settings-value {
+      font-family: 'Orbitron', sans-serif; font-size: .52rem;
+      letter-spacing: .1em; color: #00f5ff; min-width: 2.5rem;
+      text-align: right;
+    }
+
+    .neon-range {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 140px; height: 3px;
+      background: rgba(0,245,255,0.15);
+      border-radius: 2px; outline: none;
+      cursor: pointer;
+    }
+    .neon-range::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: #00f5ff;
+      box-shadow: 0 0 6px #00f5ff;
+      cursor: pointer;
+      transition: transform .1s;
+    }
+    .neon-range::-webkit-slider-thumb:hover { transform: scale(1.3); }
+
+    .neon-toggle {
+      position: relative; width: 34px; height: 18px;
+      flex-shrink: 0;
+    }
+    .neon-toggle input { opacity: 0; width: 0; height: 0; }
+    .neon-toggle-track {
+      position: absolute; inset: 0; cursor: pointer;
+      background: rgba(255,255,255,.12); border-radius: 9px;
+      transition: background .2s;
+    }
+    .neon-toggle-track::after {
+      content: '';
+      position: absolute; top: 2px; left: 2px;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: rgba(255,255,255,.4);
+      transition: transform .2s, background .2s;
+    }
+    .neon-toggle input:checked + .neon-toggle-track { background: rgba(0,245,255,0.35); }
+    .neon-toggle input:checked + .neon-toggle-track::after {
+      transform: translateX(16px);
+      background: #00f5ff;
+      box-shadow: 0 0 5px #00f5ff;
+    }
+
+    /* Slider row with value display */
+    .slider-row-inner {
+      display: flex; align-items: center; gap: .6rem;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Three.js background -->
+<canvas id="bg-canvas"></canvas>
+<div class="ui-layer" aria-hidden="true"></div>
+
+<!-- Settings backdrop + modal -->
+<div class="settings-backdrop hidden" id="settings-backdrop"></div>
+<div class="settings-modal" id="settings-modal" aria-hidden="true">
+  <div class="settings-header">
+    <span class="settings-title">SETTINGS</span>
+    <button class="settings-close" id="settings-close" aria-label="Close">✕</button>
+  </div>
+
+  <div class="settings-body">
+
+  <!-- AUDIO -->
+  <div class="settings-section">
+    <div class="settings-section-title">AUDIO</div>
+    <div class="settings-row">
+      <span class="settings-label">MASTER VOLUME</span>
+      <div class="slider-row-inner">
+        <input type="range" class="neon-range" id="s-master-vol" min="0" max="100" step="1">
+        <span class="settings-value" id="sv-master-vol">80</span>
+      </div>
+    </div>
+    <div class="settings-row">
+      <span class="settings-label">EFFECTS VOLUME</span>
+      <div class="slider-row-inner">
+        <input type="range" class="neon-range" id="s-effects-vol" min="0" max="100" step="1">
+        <span class="settings-value" id="sv-effects-vol">100</span>
+      </div>
+    </div>
+    <div class="settings-row">
+      <span class="settings-label">FOOTSTEPS VOLUME</span>
+      <div class="slider-row-inner">
+        <input type="range" class="neon-range" id="s-footsteps-vol" min="0" max="100" step="1">
+        <span class="settings-value" id="sv-footsteps-vol">70</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="settings-section">
+    <div class="settings-section-title">CONTROLS</div>
+    <div class="settings-row">
+      <span class="settings-label">SENSITIVITY</span>
+      <div class="slider-row-inner">
+        <input type="range" class="neon-range" id="s-sensitivity" min="5" max="30" step="1">
+        <span class="settings-value" id="sv-sensitivity">1.80</span>
+      </div>
+    </div>
+    <div class="settings-row">
+      <span class="settings-label">ADS SENSITIVITY</span>
+      <div class="slider-row-inner">
+        <input type="range" class="neon-range" id="s-ads-sensitivity" min="3" max="10" step="1">
+        <span class="settings-value" id="sv-ads-sensitivity">0.60</span>
+      </div>
+    </div>
+    <div class="settings-row">
+      <span class="settings-label">TOGGLE ADS</span>
+      <label class="neon-toggle">
+        <input type="checkbox" id="s-ads-toggle">
+        <span class="neon-toggle-track"></span>
+      </label>
+    </div>
+    <div class="settings-row">
+      <span class="settings-label">INVERT Y</span>
+      <label class="neon-toggle">
+        <input type="checkbox" id="s-invert-y">
+        <span class="neon-toggle-track"></span>
+      </label>
+    </div>
+  </div>
+
+  <!-- VIDEO -->
+  <div class="settings-section">
+    <div class="settings-section-title">VIDEO</div>
+    <div class="settings-row">
+      <span class="settings-label">FIELD OF VIEW</span>
+      <div class="slider-row-inner">
+        <input type="range" class="neon-range" id="s-fov" min="65" max="90" step="1">
+        <span class="settings-value" id="sv-fov">75</span>
+      </div>
+    </div>
+    <div class="settings-row">
+      <span class="settings-label">SHOW FPS</span>
+      <label class="neon-toggle">
+        <input type="checkbox" id="s-show-fps" checked>
+        <span class="neon-toggle-track"></span>
+      </label>
+    </div>
+    <div class="settings-row">
+      <span class="settings-label">MOTION BLUR</span>
+      <label class="neon-toggle">
+        <input type="checkbox" id="s-motion-blur">
+        <span class="neon-toggle-track"></span>
+      </label>
+    </div>
+  </div>
+
+  </div><!-- /.settings-body -->
+</div>
+
+<!-- Header -->
+<header class="menu-header">
+  <span class="header-logo">NEON GRID</span>
+  <div class="header-user hidden" id="header-user">
+    <span class="header-username" id="header-username"></span>
+    <div id="header-rank-badge"></div>
+    <span class="header-rp" id="header-rp"></span>
+  </div>
+</header>
+
+<!-- Left nav -->
+<nav class="menu-nav">
+  <div class="nav-item" id="nav-create">CREATE MATCH</div>
+  <div class="nav-item" id="nav-join">JOIN MATCH</div>
+  <a  class="nav-item" href="/leaderboard.html">LEADERBOARD</a>
+  <a  class="nav-item" href="#">PROFILE</a>
+  <div class="nav-item" id="nav-settings">SETTINGS</div>
+  <div class="nav-item nav-logout hidden" id="nav-logout">LOG OUT</div>
+  <div class="nav-item" id="nav-login">LOG IN</div>
+</nav>
+
+<!-- ── Join match modal ── -->
+<div id="join-modal" style="
+  display:none; position:fixed; inset:0; z-index:8000;
+  background:rgba(2,2,10,0.88); backdrop-filter:blur(8px);
+  flex-direction:column; align-items:center; justify-content:center; gap:1.4rem;">
+  <div style="font-family:'Orbitron',sans-serif; font-weight:900; font-size:1rem;
+    letter-spacing:0.42em; color:#00f5ff; text-shadow:0 0 16px #00f5ff;">JOIN MATCH</div>
+  <input id="join-code-input" type="text" maxlength="6"
+    placeholder="ENTER 6-CHAR CODE"
+    style="font-family:'Orbitron',sans-serif; font-size:1.6rem; font-weight:900;
+      letter-spacing:0.4em; text-align:center; text-transform:uppercase;
+      background:transparent; border:1px solid rgba(0,245,255,0.35);
+      color:#00f5ff; padding:0.7rem 1.2rem; outline:none; width:280px;" />
+  <div id="join-error" style="
+    font-family:'Orbitron',sans-serif; font-size:0.45rem; letter-spacing:0.3em;
+    color:#ff2d78; min-height:1.2em;"></div>
+  <div style="display:flex; gap:1rem;">
+    <button id="join-confirm-btn" style="
+      font-family:'Orbitron',sans-serif; font-size:0.7rem; font-weight:700;
+      letter-spacing:0.28em; padding:0.8rem 2rem;
+      border:1px solid rgba(0,245,255,0.35); background:rgba(0,245,255,0.06);
+      color:#00f5ff; cursor:pointer;">JOIN</button>
+    <button id="join-cancel-btn" style="
+      font-family:'Orbitron',sans-serif; font-size:0.7rem; font-weight:700;
+      letter-spacing:0.28em; padding:0.8rem 2rem;
+      border:1px solid rgba(255,255,255,0.1); background:transparent;
+      color:rgba(255,255,255,0.4); cursor:pointer;">CANCEL</button>
+  </div>
+</div>
+
+<!-- Center title -->
+<div class="menu-center" aria-label="NEON GRID">
+  <h1 class="menu-title">NEON GRID</h1>
+  <p  class="menu-tagline">Fast · Brutal · Neon</p>
+</div>
+
+<!-- Server status -->
+<div class="server-status">
+  <span class="status-dot" id="status-dot"></span>
+  <span id="status-text">— PLAYERS ONLINE</span>
+</div>
+
+<!-- Footer -->
+<footer class="menu-footer">© 2025 NEON GRID · ALL RIGHTS RESERVED</footer>
+
+<!-- Three.js (CDN, same version as game.html) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  const canvas = document.getElementById('bg-canvas');
+  if (!window.THREE) return;
+
+  const scene    = new THREE.Scene();
+  scene.fog      = new THREE.FogExp2(0x02020a, 0.018);
+
+  const camera   = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200);
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setClearColor(0x02020a, 1);
+
+  // Floor
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(160, 160),
+    new THREE.MeshStandardMaterial({ color: 0x030310, roughness: 1, metalness: 0 })
+  );
+  floor.rotation.x = -Math.PI / 2;
+  scene.add(floor);
+
+  // Wall blocks (simplified TERMINAL geometry)
+  const MAT_WALL = new THREE.MeshStandardMaterial({ color: 0x06061a, roughness: 0.9 });
+  const blocks = [
+    [0,   2, -22, 12, 4,  1],
+    [-18, 2, -15,  1, 4, 10],
+    [ 18, 2, -15,  1, 4, 10],
+    [-10, 2,   0,  1, 4,  8],
+    [ 10, 2,   0,  1, 4,  8],
+    [  0, 2,  -8,  8, 4,  1],
+    [ -5, 4,  -8,  2, 1,  1],
+    [  5, 4,  -8,  2, 1,  1],
+    [  0, 2,  10,  6, 3,  1],
+    [-14, 1.5, 5,  4, 3,  4],
+    [ 14, 1.5, 5,  4, 3,  4],
+  ];
+  blocks.forEach(([x, y, z, w, h, d]) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), MAT_WALL);
+    m.position.set(x, y, z);
+    scene.add(m);
+  });
+
+  // Lights
+  scene.add(new THREE.AmbientLight(0x0a0a28, 0.8));
+
+  const cyanLight = new THREE.PointLight(0x00f5ff, 2.5, 55);
+  cyanLight.position.set(-12, 9, -12);
+  scene.add(cyanLight);
+
+  const pinkLight = new THREE.PointLight(0xff2d78, 2, 50);
+  pinkLight.position.set(12, 9, -12);
+  scene.add(pinkLight);
+
+  const purpleLight = new THREE.PointLight(0x7b2fff, 1.8, 45);
+  purpleLight.position.set(0, 7, 2);
+  scene.add(purpleLight);
+
+  // Slow light animation
+  let _t = 0;
+
+  // Camera orbit
+  const RADIUS = 42;
+  const LOOK   = new THREE.Vector3(0, 1.5, -10);
+  let   angle  = 0;
+
+  function animate() {
+    requestAnimationFrame(animate);
+    _t += 0.016;
+    angle += 0.0014;
+
+    // Gentle light drift
+    cyanLight.position.x   = -12 + Math.sin(_t * 0.3) * 4;
+    pinkLight.position.x   =  12 + Math.cos(_t * 0.25) * 4;
+    purpleLight.position.y =   7 + Math.sin(_t * 0.2) * 2;
+
+    camera.position.set(
+      LOOK.x + Math.cos(angle) * RADIUS,
+      4 + Math.sin(_t * 0.15) * 0.8,
+      LOOK.z + Math.sin(angle) * RADIUS
+    );
+    camera.lookAt(LOOK);
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+})();
+</script>
+
+<script type="module">
+import { Auth }            from '/js/Auth.js';
+import { renderRankBadge, getRankFromRP } from '/js/RankBadge.js';
+
+const auth = new Auth();
+
+// ── Settings persistence ──────────────────────────────────────
+const DEFAULTS = {
+  ng_master_vol:     80,
+  ng_effects_vol:    100,
+  ng_footsteps_vol:  70,
+  ng_sensitivity:    18,
+  ng_ads_sensitivity: 6,
+  ng_ads_toggle:     false,
+  ng_invert_y:       false,
+  ng_fov:            75,
+  ng_show_fps:       true,
+  ng_motion_blur:    false,
+};
+
+function getS(key) {
+  const v = localStorage.getItem(key);
+  if (v === null) return DEFAULTS[key];
+  if (v === 'true') return true;
+  if (v === 'false') return false;
+  const n = parseFloat(v);
+  return isNaN(n) ? v : n;
+}
+function setS(key, val) { localStorage.setItem(key, String(val)); }
+
+function loadSettingsUI() {
+  const get = (id) => document.getElementById(id);
+  get('s-master-vol').value     = getS('ng_master_vol');
+  get('sv-master-vol').textContent = getS('ng_master_vol');
+  get('s-effects-vol').value    = getS('ng_effects_vol');
+  get('sv-effects-vol').textContent = getS('ng_effects_vol');
+  get('s-footsteps-vol').value  = getS('ng_footsteps_vol');
+  get('sv-footsteps-vol').textContent = getS('ng_footsteps_vol');
+
+  const sens = getS('ng_sensitivity');
+  get('s-sensitivity').value    = sens;
+  get('sv-sensitivity').textContent = (sens / 10).toFixed(2);
+
+  const adsSens = getS('ng_ads_sensitivity');
+  get('s-ads-sensitivity').value = adsSens;
+  get('sv-ads-sensitivity').textContent = (adsSens / 10).toFixed(2);
+
+  get('s-ads-toggle').checked   = getS('ng_ads_toggle');
+  get('s-invert-y').checked     = getS('ng_invert_y');
+
+  get('s-fov').value            = getS('ng_fov');
+  get('sv-fov').textContent     = getS('ng_fov');
+  get('s-show-fps').checked     = getS('ng_show_fps');
+  get('s-motion-blur').checked  = getS('ng_motion_blur');
+}
+
+function bindSettingsEvents() {
+  function makeRange(inputId, valueId, key, fmt) {
+    const inp = document.getElementById(inputId);
+    const val = document.getElementById(valueId);
+    inp.addEventListener('input', () => {
+      const v = parseFloat(inp.value);
+      val.textContent = fmt ? fmt(v) : v;
+      setS(key, v);
+      document.dispatchEvent(new CustomEvent('ng-settings-changed', { detail: { [key]: v } }));
+    });
+  }
+  function makeToggle(inputId, key) {
+    const inp = document.getElementById(inputId);
+    inp.addEventListener('change', () => {
+      setS(key, inp.checked);
+      document.dispatchEvent(new CustomEvent('ng-settings-changed', { detail: { [key]: inp.checked } }));
+    });
+  }
+
+  makeRange('s-master-vol',    'sv-master-vol',    'ng_master_vol',     null);
+  makeRange('s-effects-vol',   'sv-effects-vol',   'ng_effects_vol',    null);
+  makeRange('s-footsteps-vol', 'sv-footsteps-vol', 'ng_footsteps_vol',  null);
+  makeRange('s-sensitivity',   'sv-sensitivity',   'ng_sensitivity',    v => (v / 10).toFixed(2));
+  makeRange('s-ads-sensitivity','sv-ads-sensitivity','ng_ads_sensitivity', v => (v / 10).toFixed(2));
+  makeRange('s-fov',           'sv-fov',           'ng_fov',            null);
+  makeToggle('s-ads-toggle',  'ng_ads_toggle');
+  makeToggle('s-invert-y',    'ng_invert_y');
+  makeToggle('s-show-fps',    'ng_show_fps');
+  makeToggle('s-motion-blur', 'ng_motion_blur');
+}
+
+loadSettingsUI();
+bindSettingsEvents();
+
+// ── Settings modal open/close ─────────────────────────────────
+const backdrop = document.getElementById('settings-backdrop');
+const modal    = document.getElementById('settings-modal');
+
+let _closeTimer = null;
+function openSettings() {
+  if (_closeTimer) { clearTimeout(_closeTimer); _closeTimer = null; }
+  backdrop.classList.remove('hidden');
+  modal.classList.add('ready');
+  // allow one frame for display:flex to apply before adding transform
+  requestAnimationFrame(() => requestAnimationFrame(() => modal.classList.add('open')));
+  modal.removeAttribute('aria-hidden');
+}
+function closeSettings() {
+  backdrop.classList.add('hidden');
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+  // after slide-out transition, set display:none so a11y tree drops it
+  _closeTimer = setTimeout(() => {
+    modal.classList.remove('ready');
+    _closeTimer = null;
+  }, 300);
+}
+
+document.getElementById('nav-settings').addEventListener('click', openSettings);
+document.getElementById('settings-close').addEventListener('click', (e) => { e.stopPropagation(); closeSettings(); });
+backdrop.addEventListener('click', closeSettings);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !modal.classList.contains('hidden') && modal.classList.contains('open')) {
+    closeSettings();
+  }
+});
+
+// ── Navigation helpers ────────────────────────────────────────
+function navigate(url) {
+  document.body.classList.add('page-exit');
+  setTimeout(() => { window.location.href = url; }, 280);
+}
+
+// ── CREATE MATCH ──────────────────────────────────────────────
+document.getElementById('nav-create').addEventListener('click', async () => {
+  try {
+    const token = localStorage.getItem('neon_token') || null;
+    const res   = await fetch('/api/lobby/create', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ token }),
+    });
+    const { code } = await res.json();
+    navigate('/class-select.html?code=' + code);
+  } catch (err) {
+    console.error('Failed to create lobby', err);
+  }
+});
+
+// ── JOIN MATCH ────────────────────────────────────────────────
+const joinModal    = document.getElementById('join-modal');
+const joinInput    = document.getElementById('join-code-input');
+const joinError    = document.getElementById('join-error');
+const joinConfirm  = document.getElementById('join-confirm-btn');
+const joinCancel   = document.getElementById('join-cancel-btn');
+
+document.getElementById('nav-join').addEventListener('click', () => {
+  joinInput.value  = '';
+  joinError.textContent = '';
+  joinModal.style.display = 'flex';
+  setTimeout(() => joinInput.focus(), 50);
+});
+
+joinCancel.addEventListener('click', () => { joinModal.style.display = 'none'; });
+
+async function _doJoin() {
+  const code = joinInput.value.trim().toUpperCase();
+  if (code.length !== 6) { joinError.textContent = 'CODE MUST BE 6 CHARACTERS'; return; }
+  joinError.textContent = '';
+  try {
+    const res  = await fetch('/api/lobby/' + code + '/check');
+    const data = await res.json();
+    if (!data.exists) { joinError.textContent = 'LOBBY NOT FOUND OR ALREADY IN PROGRESS'; return; }
+    navigate('/class-select.html?code=' + code);
+  } catch (_) {
+    joinError.textContent = 'CONNECTION ERROR — TRY AGAIN';
+  }
+}
+
+joinConfirm.addEventListener('click', _doJoin);
+joinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') _doJoin(); });
+
+document.getElementById('nav-login').addEventListener('click', () => {
+  auth.showModal(() => updateUI());
+});
+
+document.getElementById('nav-logout').addEventListener('click', () => {
+  auth.logout();
+  updateUI();
+});
+
+// ── Auth UI update ────────────────────────────────────────────
+async function updateUI() {
+  const loggedIn = auth.isLoggedIn();
+  document.getElementById('nav-login').classList.toggle('hidden', loggedIn);
+  document.getElementById('nav-logout').classList.toggle('hidden', !loggedIn);
+  document.getElementById('header-user').classList.toggle('hidden', !loggedIn);
+
+  if (!loggedIn) return;
+
+  document.getElementById('header-username').textContent = auth.getUsername().toUpperCase();
+
+  const token = auth.getToken ? auth.getToken() : localStorage.getItem('ng_token');
+  if (!token) return;
+  try {
+    const res = await fetch('/auth/me', {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (!res.ok) return;
+    const { rank } = await res.json();
+    const rp    = rank ? (rank.rank_points || 0) : 0;
+    const entry = getRankFromRP(rp);
+
+    const badgeEl = document.getElementById('header-rank-badge');
+    badgeEl.innerHTML = '';
+    badgeEl.appendChild(renderRankBadge(entry.tier, rp, 'sm'));
+
+    document.getElementById('header-rp').textContent = rp.toLocaleString() + ' RP';
+  } catch (_) {}
+}
+
+updateUI();
+
+// ── Server status (poll /status) ─────────────────────────────
+async function pollStatus() {
+  const dot  = document.getElementById('status-dot');
+  const text = document.getElementById('status-text');
+  try {
+    const res = await fetch('/status');
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    const count = data.players ?? data.playerCount ?? data.online ?? '—';
+    dot.classList.remove('offline');
+    text.textContent = count + ' PLAYERS ONLINE';
+  } catch (_) {
+    dot.classList.add('offline');
+    text.textContent = 'SERVER OFFLINE';
+  }
+}
+pollStatus();
+setInterval(pollStatus, 15000);
+</script>
+</body>
+</html>
