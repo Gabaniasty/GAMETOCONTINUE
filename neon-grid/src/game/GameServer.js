@@ -389,10 +389,11 @@ class GameServer {
         if (posDiff > 6) return;
 
         // LOS check toward the claimed hit zone center
+        // target.y is the GLB character root (foot level)
         const isHead = hitZone === 'head';
         const targetCenter = {
           x: target.x,
-          y: isHead ? (target.y - 0.10) : (target.y - 0.95),
+          y: isHead ? (target.y + 1.55) : (target.y + 0.90),
           z: target.z,
         };
         if (!this.isLineClearOfWalls(origin, targetCenter)) return;

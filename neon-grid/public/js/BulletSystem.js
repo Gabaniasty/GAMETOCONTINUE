@@ -39,10 +39,10 @@ export class BulletSystem {
         this._playerHitboxes.set(p.id, pair);
       }
 
-      // p.y is camera/eye height (~1.65 above floor when standing)
-      const eyeY = p.y || 1.65;
-      pair.head.position.set(p.x, eyeY - 0.10, p.z); // ~1.55 above floor
-      pair.body.position.set(p.x, eyeY - 0.95, p.z); // ~0.70 above floor
+      // p.y is the GLB character root (foot level)
+      const footY = p.y || 0;
+      pair.head.position.set(p.x, footY + 1.55, p.z); // eye/head level ~1.55 above foot
+      pair.body.position.set(p.x, footY + 0.90, p.z); // torso centre ~0.90 above foot
       pair.head.visible = !p.dead;
       pair.body.visible = !p.dead;
     }
