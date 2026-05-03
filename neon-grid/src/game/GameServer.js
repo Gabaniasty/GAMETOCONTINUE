@@ -3,7 +3,7 @@ const db  = require('../db/Database');
 const { calculateRPChange, getRankFromRP } = require('./RankSystem');
 const { Matchmaker } = require('./Matchmaker');
 
-const SECRET = process.env.JWT_SECRET || 'neon_grid_secret_change_in_prod';
+const SECRET = process.env.SESSION_SECRET || process.env.JWT_SECRET || 'neon_grid_secret_change_in_prod';
 
 // Team A spawns (north, z=-45) and Team B spawns (south, z=+45)
 // x positions: -20, -10, 0, +10, +20 — matches TerminalMap.js _buildSpawns()
@@ -612,10 +612,10 @@ class GameServer {
       }, 2500);
     }
 
-    // Tell each client to respawn
+    // Tell ALL clients about every player's respawn so remote models
+    // update positions immediately (not waiting for the next game:state tick)
     for (const [id, p] of this.players) {
-      const s = this.io.sockets.sockets.get(id);
-      if (s) s.emit('player:respawned', { id, x: p.x, y: p.y, z: p.z, hp: p.hp, class: p.class });
+      this.io.emit('player:respawned', { id, x: p.x, y: p.y, z: p.z, hp: p.hp, class: p.class });
     }
 
     // Announce match start to all players

@@ -239,6 +239,10 @@ network.onRespawned = ({ id, x, y, z, hp }) => {
     hud.hideDeathScreen();
     hud.setHp(hp, maxHp);
     game.camera.position.set(x, y, z);
+    // Face toward map center so players immediately see each other
+    // North spawns (z < 0) face south (yaw = π); south spawns face north (yaw = 0)
+    game.controls.yaw   = z < 0 ? Math.PI : 0;
+    game.controls.pitch = 0;
     game.controls._vel.x = 0;
     game.controls._vel.y = 0;
     game.controls._vel.z = 0;
