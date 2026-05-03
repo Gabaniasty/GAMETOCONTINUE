@@ -42,6 +42,7 @@ export class Game {
     // ── Remote players (geometry model map + dying list) ──────────
     this._remoteControllers = new Map();   // socketId → Three.js Group (buildCharacterModel)
     this._dyingGroups       = [];          // [{ group }] death-animating groups
+    this._remoteExtrap      = new Map();   // socketId → { x,y,z,vx,vz,t } for dead reckoning
 
     // ── Spawn protection shield ────────────────────────────────────
     this._spawnShield = null;
@@ -277,12 +278,24 @@ export class Game {
       const group = this._remoteControllers.get(p.id);
       if (!group) return;
 
-      // ── Smooth position lerp toward server position ────────────────
-      const k  = Math.min(1, 10 * dt);
-      const ty = (p.y || 1.65) - 1.65;
-      group.position.x += (p.x - group.position.x) * k;
+      // ── Dead-reckoning: extrapolate from last known pos + velocity ─
+      const now  = performance.now();
+      const prev = this._remoteExtrap.get(p.id);
+      const vx   = (p.velocity && p.velocity.x) || 0;
+      const vz   = (p.velocity && p.velocity.z) || 0;
+      if (!prev || prev.x !== p.x || prev.z !== p.z) {
+        this._remoteExtrap.set(p.id, { x: p.x, y: p.y, z: p.z, vx, vz, t: now });
+      }
+      const extrap = this._remoteExtrap.get(p.id);
+      const age    = Math.min((now - extrap.t) / 1000, 0.15);
+      const ex     = extrap.x + extrap.vx * age;
+      const ez     = extrap.z + extrap.vz * age;
+      const ty     = (p.y || 1.65) - 1.65;
+
+      const k = Math.min(1, 18 * dt);
+      group.position.x += (ex - group.position.x) * k;
       group.position.y += (ty  - group.position.y) * k;
-      group.position.z += (p.z - group.position.z) * k;
+      group.position.z += (ez - group.position.z) * k;
       group.rotation.y  = p.rotY || 0;
 
       // ── HP bar ─────────────────────────────────────────────────────
@@ -306,6 +319,7 @@ export class Game {
       if (!seen.has(id)) {
         this.scene.remove(group);
         this._remoteControllers.delete(id);
+        this._remoteExtrap.delete(id);
       }
     });
   }

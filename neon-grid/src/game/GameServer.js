@@ -596,9 +596,9 @@ class GameServer {
     this._tickInterval = setInterval(() => {
       if (this.players.size === 0) return;
       this.io.emit('game:state', { players: this._getPlayersArray() });
-    }, 50);
+    }, 33);
 
-    console.log('GameServer started (20 tick/s)');
+    console.log('GameServer started (30 tick/s)');
   }
 
   // ── Countdown before round start ─────────────────────────────────

@@ -330,9 +330,21 @@
     }
 
     const container = document.getElementById('cards');
-    Object.keys(CLASSES).forEach(key => container.appendChild(buildCard(key)));
+    // WRAITH (sniper) is the only available class
+    Object.keys(CLASSES).forEach(key => {
+      const card = buildCard(key);
+      if (key !== 'WRAITH') {
+        card.style.opacity = '0.28';
+        card.style.filter  = 'grayscale(1)';
+        card.style.cursor  = 'not-allowed';
+        card.style.pointerEvents = 'none';
+        const btn = card.querySelector('.select-btn');
+        if (btn) { btn.textContent = 'LOCKED'; btn.disabled = true; btn.style.opacity = '0.4'; }
+      }
+      container.appendChild(card);
+    });
 
-    if (selected && CLASSES[selected]) selectClass(selected);
+    selectClass('WRAITH');
 
     document.getElementById('confirm-btn').addEventListener('click', () => {
       if (!selected) return;

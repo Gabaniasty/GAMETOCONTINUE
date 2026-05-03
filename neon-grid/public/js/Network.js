@@ -112,7 +112,7 @@ export class Network {
       }
 
       this._socket.emit('player:move', { x, y, z, rotY, vx, vy, vz, isADS });
-    }, 50);
+    }, 33);
   }
 
   sendStartRound() {

@@ -35,7 +35,7 @@ export class AWPWeapon {
     this._sound  = sound;
 
     this.ammo    = 5;
-    this.reserve = 25;
+    this.reserve = Infinity;
     this._maxMag = 5;
 
     this.isADS        = false;
@@ -300,7 +300,6 @@ export class AWPWeapon {
 
   // ── ADS control ───────────────────────────────────────────────────────
   aimIn() {
-    if (this.isReloading) return;
     this.isADS = true;
     this._group.visible = false;
     this._scopeEl.style.display = 'block';
@@ -336,7 +335,7 @@ export class AWPWeapon {
     if (onShoot) onShoot();
     this._updateAmmoHud();
 
-    if (this.ammo <= 0 && this.reserve > 0) {
+    if (this.ammo <= 0) {
       setTimeout(() => this.reload(), 650);
     }
   }
@@ -345,7 +344,6 @@ export class AWPWeapon {
   reload() {
     if (this.isReloading)      return;
     if (this.ammo >= this._maxMag) return;
-    if (this.reserve <= 0)     return;
 
     this.isReloading = true;
     this._reloadT    = 0;
@@ -353,14 +351,8 @@ export class AWPWeapon {
     if (this._reloadEl) this._reloadEl.style.display = 'flex';
     if (this._reloadFill) this._reloadFill.style.width = '0%';
 
-    // Unscope while reloading
-    if (this.isADS) this.aimOut();
-
     setTimeout(() => {
-      const needed = this._maxMag - this.ammo;
-      const loaded = Math.min(needed, this.reserve);
-      this.ammo    += loaded;
-      this.reserve -= loaded;
+      this.ammo        = this._maxMag;
       this.isReloading = false;
       this._reloadT    = 0;
       if (this._reloadEl)  this._reloadEl.style.display  = 'none';
@@ -369,12 +361,12 @@ export class AWPWeapon {
     }, this._RELOAD_DUR * 1000);
   }
 
-  getAmmoString() { return `${this.ammo} / ${this.reserve}`; }
+  getAmmoString() { return `${this.ammo} / ∞`; }
 
   // ── Ammo HUD update ───────────────────────────────────────────────────
   _updateAmmoHud() {
     if (this._ammoEl)    this._ammoEl.textContent    = this.ammo;
-    if (this._reserveEl) this._reserveEl.textContent = this.reserve;
+    if (this._reserveEl) this._reserveEl.textContent = '∞';
   }
 
   // ── Update (called every frame) ───────────────────────────────────────
