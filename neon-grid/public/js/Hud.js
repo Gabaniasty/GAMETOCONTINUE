@@ -113,12 +113,15 @@ export class Hud {
     this._buildAmmoMinimap(root);
     this._buildKillFeed(root);
     this._buildFpsCounter(root);
+    this._buildSettingsIcon(root);
     this._buildHitRing(root);
     this._buildKillNotif(root);
     this._buildDeathScreen(root);
     this._buildScoreboard(root);
     this._buildDamageOverlays(root);
+    this._buildSettingsPanel(root);
     this._listenAnnouncements();
+    this._listenSettingsKeys();
   }
 
   // ── Damage vignette + directional indicator ──────────────────────────
@@ -292,11 +295,237 @@ export class Hud {
   _buildFpsCounter(root) {
     const fps = this._el.fps = document.createElement('div');
     fps.style.cssText = `
-      position:absolute; top:6px; right:8px;
+      position:absolute; top:6px; right:68px;
       font-size:.48rem; letter-spacing:.15em; color:rgba(0,245,255,0.35);
     `;
     fps.textContent = '60 FPS';
     root.appendChild(fps);
+  }
+
+  // ── Settings gear icon (top-right corner) ───────────────────────────
+  _buildSettingsIcon(root) {
+    const btn = this._el.settingsBtn = document.createElement('button');
+    btn.title = 'Settings [Esc]';
+    btn.style.cssText = `
+      position:absolute; top:4px; right:8px;
+      width:32px; height:32px;
+      background:rgba(0,245,255,0.06); border:1px solid rgba(0,245,255,0.18);
+      border-radius:4px; cursor:pointer; pointer-events:all;
+      display:flex; align-items:center; justify-content:center;
+      color:rgba(0,245,255,0.55); font-size:.9rem; line-height:1;
+      transition:background .15s, color .15s;
+    `;
+    btn.innerHTML = '⚙';
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = 'rgba(0,245,255,0.14)';
+      btn.style.color = 'rgba(0,245,255,0.9)';
+    });
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = 'rgba(0,245,255,0.06)';
+      btn.style.color = 'rgba(0,245,255,0.55)';
+    });
+    btn.addEventListener('click', () => this.toggleSettings());
+    root.appendChild(btn);
+  }
+
+  // ── Full-screen: Settings panel ──────────────────────────────────────
+  _buildSettingsPanel(root) {
+    const overlay = this._el.settingsPanel = document.createElement('div');
+    overlay.style.cssText = `
+      position:absolute; inset:0;
+      background:rgba(0,0,8,0.88); backdrop-filter:blur(6px);
+      display:none; flex-direction:column;
+      align-items:center; justify-content:center; gap:0;
+      pointer-events:all; z-index:600;
+    `;
+
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+      background:rgba(4,4,20,0.95);
+      border:1px solid rgba(0,245,255,0.22);
+      box-shadow:0 0 40px rgba(0,245,255,0.08), inset 0 0 60px rgba(0,0,20,0.5);
+      padding:32px 40px 28px;
+      min-width:400px; max-width:480px; width:90%;
+      display:flex; flex-direction:column; gap:22px;
+    `;
+
+    // Title
+    const title = document.createElement('div');
+    title.style.cssText = `
+      font-size:.75rem; letter-spacing:.4em; color:#00f5ff;
+      text-shadow:0 0 12px #00f5ff; text-align:center; margin-bottom:4px;
+    `;
+    title.textContent = 'AUDIO SETTINGS';
+    panel.appendChild(title);
+
+    // Mute all toggle
+    const muteRow = document.createElement('div');
+    muteRow.style.cssText = `
+      display:flex; align-items:center; justify-content:space-between;
+      padding-bottom:16px; border-bottom:1px solid rgba(0,245,255,0.1);
+    `;
+    const muteLabel = document.createElement('span');
+    muteLabel.style.cssText = 'font-size:.52rem; letter-spacing:.2em; color:rgba(224,224,255,0.7);';
+    muteLabel.textContent = 'MUTE ALL';
+
+    const muteToggle = this._el.muteToggle = document.createElement('button');
+    const _isMuted = localStorage.getItem('ng_vol_muted') === 'true';
+    muteToggle.dataset.muted = _isMuted ? 'true' : 'false';
+    muteToggle.style.cssText = `
+      width:46px; height:24px; border-radius:12px; border:1px solid rgba(0,245,255,0.3);
+      background:${_isMuted ? '#ff2d78' : 'rgba(0,245,255,0.1)'};
+      cursor:pointer; position:relative; transition:background .2s;
+      box-shadow:${_isMuted ? '0 0 8px rgba(255,45,120,0.5)' : 'none'};
+    `;
+    muteToggle.innerHTML = `<span style="
+      position:absolute; top:3px; width:16px; height:16px; border-radius:50%;
+      background:#fff; transition:left .2s;
+      left:${_isMuted ? '26px' : '4px'};
+    "></span>`;
+    muteToggle.addEventListener('click', () => {
+      const nowMuted = muteToggle.dataset.muted !== 'true';
+      muteToggle.dataset.muted = nowMuted ? 'true' : 'false';
+      muteToggle.style.background = nowMuted ? '#ff2d78' : 'rgba(0,245,255,0.1)';
+      muteToggle.style.boxShadow  = nowMuted ? '0 0 8px rgba(255,45,120,0.5)' : 'none';
+      const knob = muteToggle.querySelector('span');
+      if (knob) knob.style.left = nowMuted ? '26px' : '4px';
+      document.dispatchEvent(new CustomEvent('ng-settings-changed', {
+        detail: { ng_vol_muted: nowMuted },
+      }));
+    });
+
+    muteRow.append(muteLabel, muteToggle);
+    panel.appendChild(muteRow);
+
+    // Volume sliders
+    const SLIDERS = [
+      { key: 'ng_vol_master',    label: 'MASTER VOLUME',    color: '#00f5ff' },
+      { key: 'ng_vol_weapons',   label: 'WEAPONS',          color: '#ff2d78' },
+      { key: 'ng_vol_footsteps', label: 'FOOTSTEPS',        color: '#7b2fff' },
+      { key: 'ng_vol_ambient',   label: 'AMBIENT',          color: '#ffa500' },
+    ];
+
+    const slidersWrap = document.createElement('div');
+    slidersWrap.style.cssText = 'display:flex; flex-direction:column; gap:16px;';
+
+    SLIDERS.forEach(({ key, label, color }) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex; flex-direction:column; gap:6px;';
+
+      const labelRow = document.createElement('div');
+      labelRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center;';
+
+      const lbl = document.createElement('span');
+      lbl.style.cssText = `font-size:.48rem; letter-spacing:.2em; color:${color};`;
+      lbl.textContent = label;
+
+      const valDisplay = document.createElement('span');
+      const storedVal = parseFloat(localStorage.getItem(key) ?? '1');
+      valDisplay.style.cssText = 'font-size:.48rem; letter-spacing:.1em; color:rgba(224,224,255,0.5);';
+      valDisplay.textContent = Math.round(storedVal * 100) + '%';
+
+      labelRow.append(lbl, valDisplay);
+
+      const sliderWrap = document.createElement('div');
+      sliderWrap.style.cssText = 'position:relative; height:6px; border-radius:3px; background:rgba(255,255,255,0.08);';
+
+      const fill = document.createElement('div');
+      fill.style.cssText = `
+        position:absolute; left:0; top:0; bottom:0;
+        width:${storedVal * 100}%;
+        background:${color}; border-radius:3px;
+        box-shadow:0 0 6px ${color}60;
+        pointer-events:none;
+      `;
+      sliderWrap.appendChild(fill);
+
+      const input = document.createElement('input');
+      input.type = 'range';
+      input.min  = '0';
+      input.max  = '1';
+      input.step = '0.01';
+      input.value = String(storedVal);
+      input.style.cssText = `
+        position:absolute; inset:0; width:100%; height:100%;
+        opacity:0; cursor:pointer; margin:0; padding:0;
+      `;
+      input.addEventListener('input', () => {
+        const v = parseFloat(input.value);
+        fill.style.width     = (v * 100) + '%';
+        valDisplay.textContent = Math.round(v * 100) + '%';
+        document.dispatchEvent(new CustomEvent('ng-settings-changed', {
+          detail: { [key]: v },
+        }));
+      });
+
+      sliderWrap.appendChild(input);
+      row.append(labelRow, sliderWrap);
+      slidersWrap.appendChild(row);
+    });
+
+    panel.appendChild(slidersWrap);
+
+    // Hint
+    const hint = document.createElement('div');
+    hint.style.cssText = `
+      font-size:.42rem; letter-spacing:.2em; color:rgba(200,200,255,0.25);
+      text-align:center; margin-top:4px;
+    `;
+    hint.textContent = '[ESC] CLOSE';
+    panel.appendChild(hint);
+
+    overlay.appendChild(panel);
+    root.appendChild(overlay);
+
+    // Also include FPS and motion-blur settings (already handled) in future
+    // For now the panel only manages audio settings
+  }
+
+  // ── Escape key toggles settings ──────────────────────────────────────
+  // When pointer lock is active, Escape releases it (browser-enforced).
+  // We track that intent so the next pointerlockchange opens settings.
+  _listenSettingsKeys() {
+    this._escPendingSettings = false;
+
+    document.addEventListener('keydown', (e) => {
+      if (e.code !== 'Escape') return;
+      if (document.pointerLockElement) {
+        // Mark intent: open settings once pointer lock releases
+        this._escPendingSettings = true;
+      } else {
+        // Already unlocked — toggle immediately
+        this.toggleSettings();
+      }
+    });
+
+    document.addEventListener('pointerlockchange', () => {
+      if (!document.pointerLockElement) {
+        // Pointer lock just released
+        if (this._escPendingSettings) {
+          this._escPendingSettings = false;
+          // Small delay so the browser finishes unlocking before we show UI
+          setTimeout(() => this.showSettings(), 50);
+        }
+      } else {
+        // Pointer lock acquired — close settings panel
+        this._escPendingSettings = false;
+        if (this._el.settingsPanel) this._el.settingsPanel.style.display = 'none';
+      }
+    });
+  }
+
+  showSettings() {
+    if (this._el.settingsPanel) this._el.settingsPanel.style.display = 'flex';
+  }
+
+  hideSettings() {
+    if (this._el.settingsPanel) this._el.settingsPanel.style.display = 'none';
+  }
+
+  toggleSettings() {
+    if (!this._el.settingsPanel) return;
+    const visible = this._el.settingsPanel.style.display === 'flex';
+    this._el.settingsPanel.style.display = visible ? 'none' : 'flex';
   }
 
   // ── Top-right: kill feed ────────────────────────────────────────────

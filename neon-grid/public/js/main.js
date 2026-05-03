@@ -26,7 +26,16 @@ const postMatch  = new PostMatch(network._socket, () => network.getLocalId());
 const scoreboard = new Scoreboard(network._socket, () => network.getLocalId());
 
 // Resume / init audio context on any user gesture
-function _initAudio() { sound.init(); }
+function _initAudio() {
+  sound.init();
+  // Apply any persisted volume settings after the audio context is created
+  const vols = sound.getVolumes();
+  sound.setVolume('master',    vols.master);
+  sound.setVolume('weapons',   vols.weapons);
+  sound.setVolume('footsteps', vols.footsteps);
+  sound.setVolume('ambient',   vols.ambient);
+  sound.setMuted(vols.muted);
+}
 document.addEventListener('mousedown', _initAudio, { once: true });
 document.addEventListener('keydown',   _initAudio, { once: true });
 
@@ -428,7 +437,7 @@ game._animate = function () {
 
 let _mapLoaded = false;
 
-// ── FOV + settings listener ──────────────────────────────────────────
+// ── FOV + audio + settings listener ─────────────────────────────────
 document.addEventListener('ng-settings-changed', (e) => {
   if ('ng_fov' in e.detail) {
     const fov = e.detail.ng_fov;
@@ -439,6 +448,13 @@ document.addEventListener('ng-settings-changed', (e) => {
     const gc = document.getElementById('gameCanvas');
     if (gc) gc.style.filter = e.detail.ng_motion_blur ? 'blur(0.6px)' : '';
   }
+  // Volume sliders
+  if ('ng_vol_master'    in e.detail) sound.setVolume('master',    e.detail.ng_vol_master);
+  if ('ng_vol_weapons'   in e.detail) sound.setVolume('weapons',   e.detail.ng_vol_weapons);
+  if ('ng_vol_footsteps' in e.detail) sound.setVolume('footsteps', e.detail.ng_vol_footsteps);
+  if ('ng_vol_ambient'   in e.detail) sound.setVolume('ambient',   e.detail.ng_vol_ambient);
+  // Mute toggle
+  if ('ng_vol_muted' in e.detail) sound.setMuted(e.detail.ng_vol_muted);
 });
 
 // Apply stored FOV on boot
