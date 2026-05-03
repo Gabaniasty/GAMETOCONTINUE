@@ -1,14 +1,137 @@
 import { buildWeapon } from './WeaponBuilder.js';
 
+// ── GLB preload cache ────────────────────────────────────────────────────────
+let _tommyGLTF    = null;
+let _tommyLoading = false;
+
+/**
+ * Call once on game init. Returns a Promise that resolves when the GLB is
+ * loaded (or immediately if it was already loaded / failed).
+ */
+export function preloadTommyModel() {
+  return new Promise((resolve) => {
+    if (_tommyGLTF)    { resolve(); return; }
+    if (_tommyLoading) { resolve(); return; }
+    _tommyLoading = true;
+
+    if (typeof THREE.GLTFLoader === 'undefined') { resolve(); return; }
+
+    const loader = new THREE.GLTFLoader();
+    loader.load(
+      '/assets/characters/tommy.glb',
+      (gltf) => {
+        _tommyGLTF    = gltf;
+        _tommyLoading = false;
+        console.log('[CharacterModel] tommy.glb loaded');
+        resolve();
+      },
+      undefined,
+      (err) => {
+        console.warn('[CharacterModel] tommy.glb failed to load — using fallback', err);
+        _tommyLoading = false;
+        resolve();
+      }
+    );
+  });
+}
+
+// ── Main builder ─────────────────────────────────────────────────────────────
 export function buildCharacterModel(classColor, playerClass, username, level) {
   const group = new THREE.Group();
 
+  if (_tommyGLTF) {
+    _buildFromGLB(group, classColor);
+  } else {
+    _buildProcedural(group, classColor, playerClass);
+  }
+
+  // ── Username label sprite (always) ───────────────────────────────────────
+  const nameSprite = _makeNameSprite(username || '???', classColor, level || 1);
+  group.add(nameSprite);
+
+  // ── HP bar (always) ───────────────────────────────────────────────────────
+  const hpBar = _makeHpBar(classColor);
+  group.add(hpBar.bg);
+  group.add(hpBar.fill);
+
+  // ── Public methods ────────────────────────────────────────────────────────
+  group.neon_dying      = false;
+  group.neon_deathTimer = 0;
+
+  group.neon_setHp = function (hp, maxHp) {
+    hpBar.update(hp, maxHp);
+  };
+
+  group.neon_playDeath = function () {
+    group.neon_dying      = true;
+    group.neon_deathTimer = 0;
+  };
+
+  group.neon_updateDeath = function (dt) {
+    if (!group.neon_dying) return false;
+    group.neon_deathTimer += dt;
+    const t = group.neon_deathTimer;
+
+    group.rotation.z = Math.min(1, t / 0.4) * Math.PI * 0.5;
+
+    if (t > 0.4) {
+      const fade = Math.max(0, 1 - (t - 0.4) / 0.6);
+      group.traverse((child) => {
+        if (child.material) {
+          child.material.transparent = true;
+          child.material.opacity     = fade;
+        }
+      });
+    }
+
+    return t >= 1.0;
+  };
+
+  return group;
+}
+
+// ── GLB-based character (head + upper body from tommy.glb) ───────────────────
+function _buildFromGLB(group, classColor) {
+  const modelScene = _tommyGLTF.scene.clone(true);
+
+  // Auto-fit: scale so total height ≈ 1.75 units
+  const box  = new THREE.Box3().setFromObject(modelScene);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+
+  const targetHeight = 1.75;
+  const scale        = size.y > 0.01 ? (targetHeight / size.y) : 1;
+  modelScene.scale.setScalar(scale);
+
+  // Recompute box after scale and position feet at y = 0
+  box.setFromObject(modelScene);
+  modelScene.position.y = -box.min.y;
+
+  // Tint meshes with class colour
+  const ec = classColor;
+  modelScene.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      if (child.material) {
+        const mat          = child.material.clone();
+        mat.emissive       = new THREE.Color(ec);
+        mat.emissiveIntensity = 0.12;
+        child.material     = mat;
+      }
+    }
+  });
+
+  group.add(modelScene);
+}
+
+// ── Procedural fallback (original geometry) ──────────────────────────────────
+function _buildProcedural(group, classColor, playerClass) {
   const bodyMat = () => new THREE.MeshStandardMaterial({
     color: 0x0d0d22,
     emissive: classColor,
     emissiveIntensity: 0.15,
   });
-  const ec = classColor;
+  const ec      = classColor;
   const edgeMat = () => new THREE.LineBasicMaterial({ color: ec, transparent: true, opacity: 0.3 });
 
   function addPart(geo, x, y, z, override) {
@@ -22,44 +145,37 @@ export function buildCharacterModel(classColor, playerClass, username, level) {
     return mesh;
   }
 
-  // ── Head ────────────────────────────────────────────────────────
-  const headGeo = new THREE.BoxGeometry(0.52, 0.52, 0.52);
-  const headMesh = addPart(headGeo, 0, 1.55, 0);
+  // Head
+  addPart(new THREE.BoxGeometry(0.52, 0.52, 0.52), 0, 1.55, 0);
 
   // Visor
-  const visorMat = new THREE.MeshBasicMaterial({
-    color: ec, transparent: true, opacity: 0.7,
-  });
-  const visor = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.16), visorMat);
+  const visorMat = new THREE.MeshBasicMaterial({ color: ec, transparent: true, opacity: 0.7 });
+  const visor    = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.16), visorMat);
   visor.position.set(0, 1.58, 0.27);
   group.add(visor);
 
-  // ── Neck ────────────────────────────────────────────────────────
+  // Neck + Torso
   addPart(new THREE.BoxGeometry(0.18, 0.14, 0.18), 0, 1.23, 0);
-
-  // ── Torso ───────────────────────────────────────────────────────
-  const torso = addPart(new THREE.BoxGeometry(0.72, 0.78, 0.36), 0, 0.88, 0);
+  addPart(new THREE.BoxGeometry(0.72, 0.78, 0.36), 0, 0.88, 0);
 
   // Chest plate
   const chestMat = new THREE.MeshStandardMaterial({ color: 0x0a0a1a, emissive: ec, emissiveIntensity: 0.5 });
-  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.35, 0.04), chestMat);
+  const chest    = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.35, 0.04), chestMat);
   chest.position.set(0, 0.95, 0.19);
   group.add(chest);
 
-  // ── Arms (separate upper/lower) ─────────────────────────────────
+  // Arms
   const lUpperArm = addPart(new THREE.BoxGeometry(0.2, 0.32, 0.2), -0.46, 1.04, 0);
   const lLowerArm = addPart(new THREE.BoxGeometry(0.17, 0.28, 0.17), -0.46, 0.72, 0);
   addPart(new THREE.BoxGeometry(0.16, 0.14, 0.14), -0.46, 0.52, 0);
-
   const rUpperArm = addPart(new THREE.BoxGeometry(0.2, 0.32, 0.2),  0.46, 1.04, 0);
   const rLowerArm = addPart(new THREE.BoxGeometry(0.17, 0.28, 0.17), 0.46, 0.72, 0);
   addPart(new THREE.BoxGeometry(0.16, 0.14, 0.14),  0.46, 0.52, 0);
 
-  // ── Aim pose for right arm ───────────────────────────────────────
   rUpperArm.rotation.x = -0.7;
   rLowerArm.rotation.x = -0.4;
 
-  // ── Legs ────────────────────────────────────────────────────────
+  // Legs
   addPart(new THREE.BoxGeometry(0.26, 0.36, 0.26), -0.2,  0.36, 0);
   addPart(new THREE.BoxGeometry(0.22, 0.34, 0.22), -0.2,  0.0,  0);
   addPart(new THREE.BoxGeometry(0.24, 0.1,  0.32), -0.2, -0.19, 0.04);
@@ -67,65 +183,18 @@ export function buildCharacterModel(classColor, playerClass, username, level) {
   addPart(new THREE.BoxGeometry(0.22, 0.34, 0.22),  0.2,  0.0,  0);
   addPart(new THREE.BoxGeometry(0.24, 0.1,  0.32),  0.2, -0.19, 0.04);
 
-  // ── Class weapon held in right hand ─────────────────────────────
-  const weapon = buildWeapon(playerClass || 'SOLDIER');
+  // Weapon
+  const weapon       = buildWeapon(playerClass || 'SOLDIER');
   weapon.scale.setScalar(0.75);
   weapon.position.set(0.08, -0.18, -0.22);
-  weapon.rotation.x = -0.15;
-  // Anchor to right hand area
+  weapon.rotation.x  = -0.15;
   const weaponAnchor = new THREE.Group();
   weaponAnchor.position.set(0.46, 0.52, 0);
   weaponAnchor.add(weapon);
   group.add(weaponAnchor);
-
-  // ── Username label sprite ────────────────────────────────────────
-  const nameSprite = _makeNameSprite(username || '???', ec, level || 1);
-  group.add(nameSprite);
-
-  // ── HP bar (two canvas sprites) ─────────────────────────────────
-  const hpBar = _makeHpBar(ec);
-  group.add(hpBar.bg);
-  group.add(hpBar.fill);
-
-  // ── Public methods on the group ─────────────────────────────────
-  group.neon_dying = false;
-  group.neon_deathTimer = 0;
-
-  group.neon_setHp = function (hp, maxHp) {
-    hpBar.update(hp, maxHp);
-  };
-
-  group.neon_playDeath = function () {
-    group.neon_dying = true;
-    group.neon_deathTimer = 0;
-  };
-
-  group.neon_updateDeath = function (dt) {
-    if (!group.neon_dying) return false;
-    group.neon_deathTimer += dt;
-    const t = group.neon_deathTimer;
-
-    // Fall over on Z axis over 400ms
-    group.rotation.z = Math.min(1, t / 0.4) * Math.PI * 0.5;
-
-    // Fade opacity from 400ms → 1000ms
-    if (t > 0.4) {
-      const fade = Math.max(0, 1 - (t - 0.4) / 0.6);
-      group.traverse((child) => {
-        if (child.material) {
-          child.material.transparent = true;
-          child.material.opacity = fade;
-        }
-      });
-    }
-
-    return t >= 1.0;
-  };
-
-  return group;
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function _makeNameSprite(username, classColor, level) {
   const c   = document.createElement('canvas');
@@ -136,7 +205,6 @@ function _makeNameSprite(username, classColor, level) {
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.fillRect(0, 0, 256, 64);
 
-  // Level badge
   ctx.fillStyle = hex;
   ctx.fillRect(6, 18, 26, 26);
   ctx.fillStyle = '#ffffff';
@@ -145,12 +213,11 @@ function _makeNameSprite(username, classColor, level) {
   ctx.textBaseline = 'middle';
   ctx.fillText(String(level), 19, 31);
 
-  // Username
   ctx.font = 'bold 23px monospace';
   ctx.textAlign = 'left';
   ctx.fillStyle = hex;
   ctx.shadowColor = hex;
-  ctx.shadowBlur = 8;
+  ctx.shadowBlur  = 8;
   ctx.fillText(username.slice(0, 14), 40, 32);
 
   const tex    = new THREE.CanvasTexture(c);
@@ -165,7 +232,6 @@ function _makeHpBar(classColor) {
   const W = 128, H = 12;
   const hex = '#' + classColor.toString(16).padStart(6, '0');
 
-  // Background
   const bgC = document.createElement('canvas');
   bgC.width = W; bgC.height = H;
   const bgCtx = bgC.getContext('2d');
@@ -176,23 +242,22 @@ function _makeHpBar(classColor) {
   const bg    = new THREE.Sprite(bgMat);
   bg.scale.set(1.0, 0.08, 1);
   bg.position.y = 2.5;
-  bg.visible = false;
+  bg.visible    = false;
 
-  // Fill
-  const fC = document.createElement('canvas');
+  const fC    = document.createElement('canvas');
   fC.width = W; fC.height = H;
-  const fCtx = fC.getContext('2d');
-  const fTex = new THREE.CanvasTexture(fC);
-  const fMat = new THREE.SpriteMaterial({ map: fTex, transparent: true, depthTest: false });
-  const fill = new THREE.Sprite(fMat);
+  const fCtx  = fC.getContext('2d');
+  const fTex  = new THREE.CanvasTexture(fC);
+  const fMat  = new THREE.SpriteMaterial({ map: fTex, transparent: true, depthTest: false });
+  const fill  = new THREE.Sprite(fMat);
   fill.scale.set(1.0, 0.08, 1);
   fill.position.y = 2.5;
-  fill.visible = false;
+  fill.visible    = false;
 
   function update(hp, maxHp) {
-    const pct = Math.max(0, Math.min(1, hp / maxHp));
+    const pct  = Math.max(0, Math.min(1, hp / maxHp));
     const show = pct < 1.0;
-    bg.visible = show;
+    bg.visible   = show;
     fill.visible = show;
     if (show) {
       fCtx.clearRect(0, 0, W, H);

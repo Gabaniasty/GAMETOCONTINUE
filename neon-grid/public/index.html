@@ -381,13 +381,44 @@
 
 <!-- Left nav -->
 <nav class="menu-nav">
-  <a  class="nav-item" id="nav-play" href="#">PLAY</a>
+  <div class="nav-item" id="nav-create">CREATE MATCH</div>
+  <div class="nav-item" id="nav-join">JOIN MATCH</div>
   <a  class="nav-item" href="/leaderboard.html">LEADERBOARD</a>
   <a  class="nav-item" href="#">PROFILE</a>
   <div class="nav-item" id="nav-settings">SETTINGS</div>
   <div class="nav-item nav-logout hidden" id="nav-logout">LOG OUT</div>
   <div class="nav-item" id="nav-login">LOG IN</div>
 </nav>
+
+<!-- ── Join match modal ── -->
+<div id="join-modal" style="
+  display:none; position:fixed; inset:0; z-index:8000;
+  background:rgba(2,2,10,0.88); backdrop-filter:blur(8px);
+  flex-direction:column; align-items:center; justify-content:center; gap:1.4rem;">
+  <div style="font-family:'Orbitron',sans-serif; font-weight:900; font-size:1rem;
+    letter-spacing:0.42em; color:#00f5ff; text-shadow:0 0 16px #00f5ff;">JOIN MATCH</div>
+  <input id="join-code-input" type="text" maxlength="6"
+    placeholder="ENTER 6-CHAR CODE"
+    style="font-family:'Orbitron',sans-serif; font-size:1.6rem; font-weight:900;
+      letter-spacing:0.4em; text-align:center; text-transform:uppercase;
+      background:transparent; border:1px solid rgba(0,245,255,0.35);
+      color:#00f5ff; padding:0.7rem 1.2rem; outline:none; width:280px;" />
+  <div id="join-error" style="
+    font-family:'Orbitron',sans-serif; font-size:0.45rem; letter-spacing:0.3em;
+    color:#ff2d78; min-height:1.2em;"></div>
+  <div style="display:flex; gap:1rem;">
+    <button id="join-confirm-btn" style="
+      font-family:'Orbitron',sans-serif; font-size:0.7rem; font-weight:700;
+      letter-spacing:0.28em; padding:0.8rem 2rem;
+      border:1px solid rgba(0,245,255,0.35); background:rgba(0,245,255,0.06);
+      color:#00f5ff; cursor:pointer;">JOIN</button>
+    <button id="join-cancel-btn" style="
+      font-family:'Orbitron',sans-serif; font-size:0.7rem; font-weight:700;
+      letter-spacing:0.28em; padding:0.8rem 2rem;
+      border:1px solid rgba(255,255,255,0.1); background:transparent;
+      color:rgba(255,255,255,0.4); cursor:pointer;">CANCEL</button>
+  </div>
+</div>
 
 <!-- Center title -->
 <div class="menu-center" aria-label="NEON GRID">
@@ -630,17 +661,54 @@ function navigate(url) {
   setTimeout(() => { window.location.href = url; }, 280);
 }
 
-document.getElementById('nav-play').addEventListener('click', (e) => {
-  e.preventDefault();
-  if (auth.isLoggedIn()) {
-    navigate('/class-select.html');
-  } else {
-    auth.showModal(() => {
-      updateUI();
-      navigate('/class-select.html');
+// ── CREATE MATCH ──────────────────────────────────────────────
+document.getElementById('nav-create').addEventListener('click', async () => {
+  try {
+    const token = localStorage.getItem('neon_token') || null;
+    const res   = await fetch('/api/lobby/create', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ token }),
     });
+    const { code } = await res.json();
+    navigate('/class-select.html?code=' + code);
+  } catch (err) {
+    console.error('Failed to create lobby', err);
   }
 });
+
+// ── JOIN MATCH ────────────────────────────────────────────────
+const joinModal    = document.getElementById('join-modal');
+const joinInput    = document.getElementById('join-code-input');
+const joinError    = document.getElementById('join-error');
+const joinConfirm  = document.getElementById('join-confirm-btn');
+const joinCancel   = document.getElementById('join-cancel-btn');
+
+document.getElementById('nav-join').addEventListener('click', () => {
+  joinInput.value  = '';
+  joinError.textContent = '';
+  joinModal.style.display = 'flex';
+  setTimeout(() => joinInput.focus(), 50);
+});
+
+joinCancel.addEventListener('click', () => { joinModal.style.display = 'none'; });
+
+async function _doJoin() {
+  const code = joinInput.value.trim().toUpperCase();
+  if (code.length !== 6) { joinError.textContent = 'CODE MUST BE 6 CHARACTERS'; return; }
+  joinError.textContent = '';
+  try {
+    const res  = await fetch('/api/lobby/' + code + '/check');
+    const data = await res.json();
+    if (!data.exists) { joinError.textContent = 'LOBBY NOT FOUND OR ALREADY IN PROGRESS'; return; }
+    navigate('/class-select.html?code=' + code);
+  } catch (_) {
+    joinError.textContent = 'CONNECTION ERROR — TRY AGAIN';
+  }
+}
+
+joinConfirm.addEventListener('click', _doJoin);
+joinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') _doJoin(); });
 
 document.getElementById('nav-login').addEventListener('click', () => {
   auth.showModal(() => updateUI());

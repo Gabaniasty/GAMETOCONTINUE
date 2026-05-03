@@ -7,6 +7,7 @@ import { CLASSES }      from './Classes.js';
 import { OverwatchMap, OVERWATCH_AABBS } from './maps/OverwatchMap.js';
 import { PostMatch }    from './PostMatch.js';
 import { Scoreboard }   from './Scoreboard.js';
+import { preloadTommyModel } from './CharacterModel.js';
 
 // ── Map selection via URL param (?map=OVERWATCH | TERMINAL) ─────────────────
 const _selectedMap = (new URLSearchParams(location.search).get('map') || 'TERMINAL').toUpperCase();
@@ -21,6 +22,9 @@ const network = new Network();
 const hud     = new Hud();
 const bullets = new BulletSystem(game.scene);
 const sound   = new SoundEngine();
+
+// Preload tommy.glb so remote player models use it when ready
+preloadTommyModel();
 
 const postMatch  = new PostMatch(network._socket, () => network.getLocalId());
 const scoreboard = new Scoreboard(network._socket, () => network.getLocalId());
@@ -280,6 +284,24 @@ document.addEventListener('keyup', (e) => {
   if (e.code === 'Tab') scoreboard.hide();
 });
 
+// ── ESC: pointer-lock release → pause menu (only during gameplay) ──
+// Browsers suppress Escape in keydown during pointer lock, so we use
+// the pointerlockchange event to detect when ESC was pressed.
+document.addEventListener('pointerlockchange', () => {
+  const isLocked = !!document.pointerLockElement;
+  if (!isLocked) {
+    const lobbyVisible = _lobbyOverlay && _lobbyOverlay.style.display !== 'none';
+    if (!lobbyVisible && !_isPaused) _openPause();
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape' && _isPaused) {
+    e.preventDefault();
+    _closePause();
+  }
+});
+
 // ── Scope wiring (WRAITH only) ─────────────────────────────────────
 if (localClass === 'WRAITH') {
   game.controls.onScope   = () => game.setScoped(true);
@@ -313,6 +335,43 @@ network.onKilled = (...args) => {
   if (game.controls.isScoped) game.controls.isScoped = false;
   if (_origOnKilled) _origOnKilled(...args);
 };
+
+// ── Lobby code display ────────────────────────────────────────────
+network.onLobbyCode = (code) => {
+  const row = document.getElementById('lobby-code-row');
+  const el  = document.getElementById('lobby-code-display');
+  if (row && el) {
+    el.textContent = code;
+    row.style.display = 'flex';
+    el.onclick = () => {
+      navigator.clipboard.writeText(code).then(() => {
+        const copied = document.getElementById('lobby-code-copied');
+        if (copied) { copied.style.opacity = 1; setTimeout(() => { copied.style.opacity = 0; }, 1800); }
+      }).catch(() => {});
+    };
+  }
+};
+
+// ── ESC pause menu ────────────────────────────────────────────────
+const _pauseMenu   = document.getElementById('pause-menu');
+const _pauseResume = document.getElementById('pause-resume');
+const _pauseQuit   = document.getElementById('pause-quit');
+let   _isPaused    = false;
+
+function _openPause() {
+  if (!_pauseMenu) return;
+  _isPaused = true;
+  _pauseMenu.classList.add('open');
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+function _closePause() {
+  if (!_pauseMenu) return;
+  _isPaused = false;
+  _pauseMenu.classList.remove('open');
+}
+
+if (_pauseResume) _pauseResume.onclick = () => _closePause();
+if (_pauseQuit)   _pauseQuit.onclick   = () => { network.leaveLobby(); };
 
 // ── Lobby overlay ─────────────────────────────────────────────────
 const _lobbyOverlay    = document.getElementById('lobby-overlay');

@@ -3,9 +3,8 @@ const http     = require('http');
 const { Server } = require('socket.io');
 const cors     = require('cors');
 const path     = require('path');
-const { GameServer }                         = require('./src/game/GameServer');
+const { LobbyManager }                               = require('./src/game/LobbyManager');
 const { router: AuthRouter, verifyToken, apiRouter } = require('./src/auth/AuthRouter');
-const db                                     = require('./src/db/Database');
 
 const app    = express();
 const server = http.createServer(app);
@@ -28,25 +27,41 @@ app.use(express.static(path.join(__dirname, 'public'), {
 app.use('/auth', AuthRouter);
 app.use('/api', apiRouter);
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', players: io.engine.clientsCount });
+// ── Lobby manager ────────────────────────────────────────────────────
+const lobbyManager = new LobbyManager(io);
+
+// ── Socket: route each connection to the correct lobby ───────────────
+io.on('connection', (socket) => {
+  socket.on('lobby:enter', ({ code, username, class: playerClass, token }) => {
+    if (!code) {
+      socket.emit('lobby:error', { message: 'No lobby code. Create or join a match from the main menu.' });
+      return;
+    }
+    const ok = lobbyManager.addPlayerToLobby(code.toUpperCase().trim(), socket, {
+      username,
+      class: playerClass,
+      token,
+    });
+    if (!ok) {
+      socket.emit('lobby:error', { message: `Lobby "${code.toUpperCase()}" not found. It may have expired.` });
+    }
+  });
 });
 
-app.get('/status', (req, res) => {
-  res.json({ status: 'ok', players: io.engine.clientsCount });
+// ── REST: create a private lobby ─────────────────────────────────────
+app.post('/api/lobby/create', (req, res) => {
+  const code = lobbyManager.createLobby();
+  res.json({ code });
 });
 
-const gameServer = new GameServer(io);
-gameServer.start();
-
-// POST /api/match/end — force-end the current round (host-only)
-app.post('/api/match/end', verifyToken, (req, res) => {
-  if (!gameServer.isHost(req.user.username)) {
-    return res.status(403).json({ error: 'Only the current room host may end the round' });
-  }
-  gameServer._endRound();
-  res.json({ ok: true, message: 'Round ended' });
+// ── REST: verify a lobby code before the client navigates ────────────
+app.get('/api/lobby/:code/check', (req, res) => {
+  const exists = lobbyManager.hasLobby(req.params.code);
+  res.json({ exists });
 });
+
+app.get('/health', (req, res) => res.json({ status: 'ok', ...lobbyManager.stats() }));
+app.get('/status', (req, res) => res.json({ status: 'ok', ...lobbyManager.stats() }));
 
 server.listen(PORT, () => {
   console.log(`NEON GRID server running on port ${PORT}`);

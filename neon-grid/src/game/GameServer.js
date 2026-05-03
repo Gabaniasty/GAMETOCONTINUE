@@ -1,7 +1,6 @@
 const jwt = require('jsonwebtoken');
 const db  = require('../db/Database');
 const { calculateRPChange, getRankFromRP } = require('./RankSystem');
-const { Matchmaker } = require('./Matchmaker');
 
 const SECRET = process.env.SESSION_SECRET || process.env.JWT_SECRET || 'neon_grid_secret_change_in_prod';
 
@@ -201,8 +200,9 @@ function rayAABBDist(ro, rd, box) {
 }
 
 class GameServer {
-  constructor(io) {
+  constructor(io, roomCode) {
     this.io           = io;
+    this._room        = roomCode || 'default';
     this.players      = new Map();
     this._spawnIndex  = 0;
     this._tickInterval = null;
@@ -234,8 +234,7 @@ class GameServer {
     this._countdownActive = false;
     this._autoStartTimer  = null;
 
-    // ── Matchmaker ───────────────────────────────────────────────
-    this.matchmaker = new Matchmaker(io);
+    // (private lobby — no global matchmaker)
   }
 
   _applyMap(mapId) {
@@ -248,7 +247,7 @@ class GameServer {
       this.mapAABBs   = ARENA_AABBS;
       this._bounds    = BOUNDS_TERMINAL;
     }
-    this.io.emit('game:map', { mapId: this.currentMap });
+    this.io.to(this._room).emit('game:map', { mapId: this.currentMap });
   }
 
   isLineClearOfWalls(from, to) {
@@ -278,130 +277,115 @@ class GameServer {
   }
 
   start() {
-    this.io.on('connection', (socket) => {
-      console.log(`Player connected: ${socket.id}`);
+    this._tickInterval = setInterval(() => {
+      if (this.players.size === 0) return;
+      this.io.to(this._room).emit('game:state', { players: this._getPlayersArray() });
+    }, 33);
+    console.log(`[${this._room}] Lobby started`);
+  }
 
-      socket.on('player:join', ({ username, class: playerClass, token }) => {
-        // ── Max players check ────────────────────────────────────
-        if (this.players.size >= MAX_PLAYERS) {
-          socket.emit('game:full', { reason: 'Session is full (max 10 players).' });
-          return;
-        }
+  addPlayer(socket, { username, class: playerClass, token } = {}) {
+    socket.join(this._room);
 
-        let resolvedUsername = username || `Ghost_${socket.id.slice(0, 4)}`;
-        let userId = null;
+    if (this.players.size >= MAX_PLAYERS) {
+      socket.emit('game:full', { reason: 'Lobby is full (max 10 players).' });
+      return;
+    }
 
-        if (token) {
-          try {
-            const payload = jwt.verify(token, SECRET);
-            resolvedUsername = payload.username;
-            userId = payload.userId;
-          } catch { /* invalid token — continue as guest */ }
-        }
+    let resolvedUsername = username || `Ghost_${socket.id.slice(0, 4)}`;
+    let userId = null;
 
-        const spawn = this._getFarthestSpawn();
-        const cls   = CLASSES[playerClass] || CLASSES.SOLDIER;
-        const player = {
-          id:       socket.id,
-          userId,
-          username: resolvedUsername,
-          class:    playerClass || 'SOLDIER',
-          x: spawn.x, y: spawn.y, z: spawn.z,
-          rotY: 0,
-          hp:     cls.hp,
-          kills:  0,
-          deaths: 0,
-          dead:   false,
-          spawnProtection: true,
-          isShooting: false,
-          isADS:      false,
-          velocity:   { x: 0, y: 0, z: 0 },
-          rankPoints: 0,
-          // per-round session stats
-          damage:     0,
-          headshots:  0,
-          bestStreak: 0,
-        };
+    if (token) {
+      try {
+        const payload = jwt.verify(token, SECRET);
+        resolvedUsername = payload.username;
+        userId = payload.userId;
+      } catch { /* invalid token — continue as guest */ }
+    }
 
-        this.players.set(socket.id, player);
+    const spawn = this._getFarthestSpawn();
+    const cls   = CLASSES[playerClass] || CLASSES.SOLDIER;
+    const player = {
+      id:       socket.id,
+      userId,
+      username: resolvedUsername,
+      class:    playerClass || 'SOLDIER',
+      x: spawn.x, y: spawn.y, z: spawn.z,
+      rotY: 0,
+      hp:     cls.hp,
+      kills:  0,
+      deaths: 0,
+      dead:   false,
+      spawnProtection: true,
+      isShooting: false,
+      isADS:      false,
+      velocity:   { x: 0, y: 0, z: 0 },
+      rankPoints: 0,
+      damage:     0,
+      headshots:  0,
+      bestStreak: 0,
+    };
 
-        // Async rank-points lookup so the death-screen killer badge shows the real tier
-        if (userId) {
-          try {
-            const rankRow = db.getRank(userId);
-            if (rankRow && player) player.rankPoints = rankRow.rank_points || 0;
-          } catch (_) { /* guest or new account — leave rankPoints at 0 */ }
-        }
+    this.players.set(socket.id, player);
 
-        // Inform joining player of the active map so their client loads correctly
-        socket.emit('game:map', { mapId: this.currentMap });
+    if (userId) {
+      try {
+        const rankRow = db.getRank(userId);
+        if (rankRow && player) player.rankPoints = rankRow.rank_points || 0;
+      } catch (_) { /* guest or new account */ }
+    }
 
-        // Assign host to first player
-        if (!this.hostId) this.hostId = socket.id;
+    socket.emit('game:map',   { mapId: this.currentMap });
+    socket.emit('lobby:code', { code: this._room });
 
-        console.log(`Player joined: ${player.username} (${player.class})`);
-        setTimeout(() => {
-          if (this.players.has(socket.id)) this.players.get(socket.id).spawnProtection = false;
-        }, 2500);
+    if (!this.hostId) this.hostId = socket.id;
 
-        socket.emit('game:state', { players: this._getPlayersArray() });
-        socket.broadcast.emit('game:state', { players: this._getPlayersArray() });
+    console.log(`[${this._room}] Player joined: ${resolvedUsername} (${playerClass})`);
 
+    setTimeout(() => {
+      if (this.players.has(socket.id)) this.players.get(socket.id).spawnProtection = false;
+    }, 2500);
+
+    socket.emit('game:state',                { players: this._getPlayersArray() });
+    socket.to(this._room).emit('game:state', { players: this._getPlayersArray() });
+    this._broadcastLobbyState();
+
+    // ── Per-socket event handlers ─────────────────────────────────────
+
+    socket.on('player:move', ({ x, y, z, rotY, vx, vy, vz, isADS }) => {
+      const p = this.players.get(socket.id);
+      if (!p || p.dead) return;
+      const B = this._bounds;
+      p.x        = clamp(x, -B, B);
+      p.y        = y;
+      p.z        = clamp(z, -B, B);
+      p.rotY     = rotY;
+      p.velocity = { x: vx || 0, y: vy || 0, z: vz || 0 };
+      p.isADS    = !!isADS;
+    });
+
+    socket.on('game:map_request', ({ mapId }) => {
+      if (this.gameState !== 'lobby') return;
+      if (this.players.size <= 1) this._applyMap(mapId);
+      socket.emit('game:map', { mapId: this.currentMap });
+    });
+
+    socket.on('game:vote_map', ({ mapId }) => {
+      if (this.gameState !== 'lobby') return;
+      if (mapId !== 'TERMINAL' && mapId !== 'OVERWATCH') return;
+      this._mapVotes.set(socket.id, mapId);
+      this._broadcastLobbyState();
+    });
+
+    socket.on('game:set_rounds', ({ target }) => {
+      if (socket.id !== this.hostId) return;
+      if (this.gameState !== 'lobby') return;
+      const t = parseInt(target);
+      if ([5, 10, 15, 20].includes(t)) {
+        this.roundTarget = t;
         this._broadcastLobbyState();
-
-        // Auto-start: when 2+ players are in lobby, start a countdown timer
-        // (host can also click START to skip the wait)
-        if (this.players.size >= 2 && this.gameState === 'lobby' &&
-            !this._countdownActive && !this._autoStartTimer) {
-          this._autoStartTimer = setTimeout(() => {
-            this._autoStartTimer = null;
-            if (this.gameState === 'lobby' && this.players.size >= 2 && !this._countdownActive) {
-              this._startCountdown();
-            }
-          }, 30000);
-        }
-      });
-
-      socket.on('player:move', ({ x, y, z, rotY, vx, vy, vz, isADS }) => {
-        const p = this.players.get(socket.id);
-        if (!p || p.dead) return;
-        const B = this._bounds;
-        p.x        = clamp(x, -B, B);
-        p.y        = y;
-        p.z        = clamp(z, -B, B);
-        p.rotY     = rotY;
-        p.velocity = { x: vx || 0, y: vy || 0, z: vz || 0 };
-        p.isADS    = !!isADS;
-      });
-
-      // ── Map selection (first requesting player sets the map) ──────
-      socket.on('game:map_request', ({ mapId }) => {
-        if (this.gameState !== 'lobby') return;
-        if (this.players.size <= 1) {
-          this._applyMap(mapId);
-        }
-        // Always inform the requesting client of the current map
-        socket.emit('game:map', { mapId: this.currentMap });
-      });
-
-      // ── Map vote ─────────────────────────────────────────────────
-      socket.on('game:vote_map', ({ mapId }) => {
-        if (this.gameState !== 'lobby') return;
-        if (mapId !== 'TERMINAL' && mapId !== 'OVERWATCH') return;
-        this._mapVotes.set(socket.id, mapId);
-        this._broadcastLobbyState();
-      });
-
-      // ── Round target (host only) ──────────────────────────────────
-      socket.on('game:set_rounds', ({ target }) => {
-        if (socket.id !== this.hostId) return;
-        if (this.gameState !== 'lobby') return;
-        const t = parseInt(target);
-        if ([5, 10, 15, 20].includes(t)) {
-          this.roundTarget = t;
-          this._broadcastLobbyState();
-        }
-      });
+      }
+    });
 
       // ── Shoot handler ────────────────────────────────────────────
       socket.on('player:shoot', ({ origin, direction, weaponClass, targetId, distance, hitZone }) => {
@@ -484,7 +468,7 @@ class GameServer {
           if (isHead) shooter.headshots = (shooter.headshots || 0) + 1;
 
           // Broadcast updated kill counts for HUD
-          this.io.emit('game:kills_update', {
+          this.io.to(this._room).emit('game:kills_update', {
             kills: Array.from(this.players.values()).map(p => ({
               id: p.id, username: p.username, kills: p.kills,
             })),
@@ -495,7 +479,7 @@ class GameServer {
           if (shooter.kills >= this.roundTarget && !this._endScheduled) {
             this._endScheduled = true;
             clearTimeout(this._roundTimer);
-            this.io.emit('game:match_winner', {
+            this.io.to(this._room).emit('game:match_winner', {
               winnerId:   socket.id,
               winnerName: shooter.username,
               kills:      shooter.kills,
@@ -507,7 +491,7 @@ class GameServer {
           const weaponName = (weaponClass || shooter.class) === 'WRAITH' ? 'AWP'
             : (weaponClass || shooter.class) === 'GHOST' ? 'SMG' : 'AK47';
 
-          this.io.emit('player:killed', {
+          this.io.to(this._room).emit('player:killed', {
             killerId:    socket.id,   killerName:  shooter.username,
             victimId:    targetId,    victimName:  target.username,
             killerClass: shooter.class,
@@ -536,7 +520,7 @@ class GameServer {
             announceType = 'killing_spree';
           }
           if (announceType) {
-            this.io.emit('announcement', { type: announceType });
+            this.io.to(this._room).emit('announcement', { type: announceType });
           }
 
           // Stats are committed in bulk at round end; no per-kill DB writes.
@@ -546,7 +530,7 @@ class GameServer {
             const sp = this._getFarthestSpawn();
             const hp = (CLASSES[target.class] || CLASSES.SOLDIER).hp;
             Object.assign(target, { x: sp.x, y: sp.y, z: sp.z, hp, dead: false, spawnProtection: true });
-            this.io.emit('player:respawned', {
+            this.io.to(this._room).emit('player:respawned', {
               id: targetId, x: sp.x, y: sp.y, z: sp.z, hp, class: target.class,
             });
             setTimeout(() => {
@@ -591,61 +575,50 @@ class GameServer {
         });
       });
 
-      // ── Matchmaking queue ────────────────────────────────────────
-      socket.on('queue:join', ({ userId, username, rankPoints, playerClass }) => {
-        this.matchmaker.joinQueue(socket, { userId, username, rankPoints, playerClass });
-      });
-
-      socket.on('queue:leave', () => {
-        this.matchmaker.leaveQueue(socket.id);
-      });
-
-      // ── Host starts the round ────────────────────────────────────
-      socket.on('game:start', () => {
-        if (socket.id !== this.hostId) return;
-        if (this.gameState !== 'lobby') return;
-        if (this._countdownActive) return;
-        // Cancel any pending auto-start and kick off the countdown immediately
-        if (this._autoStartTimer) { clearTimeout(this._autoStartTimer); this._autoStartTimer = null; }
-        this._startCountdown();
-      });
-
-      socket.on('disconnect', () => {
-        this.matchmaker.leaveQueue(socket.id);
-        const p = this.players.get(socket.id);
-        if (p) console.log(`Player left: ${p.username} (${socket.id})`);
-        this.players.delete(socket.id);
-        this.io.emit('player:left', { id: socket.id });
-
-        // Reassign host to next available player
-        if (this.hostId === socket.id) {
-          const next = this.players.keys().next();
-          this.hostId = next.done ? null : next.value;
-        }
-
-        // Cancel auto-start if fewer than 2 players remain
-        if (this.players.size < 2 && this._autoStartTimer) {
-          clearTimeout(this._autoStartTimer);
-          this._autoStartTimer = null;
-        }
-
-        // Reset state if everyone left
-        if (this.players.size === 0) {
-          this.gameState = 'lobby';
-          this._countdownActive = false;
-          if (this._roundTimer) { clearTimeout(this._roundTimer); this._roundTimer = null; }
-        }
-
-        this._broadcastLobbyState();
-      });
+    // ── Host starts the round ────────────────────────────────────────
+    socket.on('game:start', () => {
+      if (socket.id !== this.hostId) return;
+      if (this.gameState !== 'lobby') return;
+      if (this._countdownActive) return;
+      this._startCountdown();
     });
 
-    this._tickInterval = setInterval(() => {
-      if (this.players.size === 0) return;
-      this.io.emit('game:state', { players: this._getPlayersArray() });
-    }, 33);
+    // ── Leave match voluntarily ───────────────────────────────────────
+    socket.on('game:leave', () => {
+      this._handlePlayerLeave(socket);
+      socket.leave(this._room);
+      socket.emit('lobby:left', {});
+    });
 
-    console.log('GameServer started (30 tick/s)');
+    socket.on('disconnect', () => {
+      this._handlePlayerLeave(socket);
+    });
+  }
+
+  _handlePlayerLeave(socket) {
+    const p = this.players.get(socket.id);
+    if (!p) return;
+    console.log(`[${this._room}] Player left: ${p.username}`);
+    this.players.delete(socket.id);
+    this._mapVotes.delete(socket.id);
+    this.io.to(this._room).emit('player:left', { id: socket.id });
+
+    if (this.hostId === socket.id) {
+      const next = this.players.keys().next();
+      this.hostId = next.done ? null : next.value;
+      if (this.hostId) {
+        this.io.to(this._room).emit('lobby:host_changed', { newHostId: this.hostId });
+      }
+    }
+
+    if (this.players.size === 0) {
+      this.gameState        = 'lobby';
+      this._countdownActive = false;
+      this._endScheduled    = false;
+      if (this._roundTimer) { clearTimeout(this._roundTimer); this._roundTimer = null; }
+    }
+
+    this._broadcastLobbyState();
   }
 
   // ── Countdown before round start ─────────────────────────────────
@@ -660,12 +633,12 @@ class GameServer {
     this._applyMap(chosenMap);
 
     let count = 5;
-    this.io.emit('game:countdown', { seconds: count });
+    this.io.to(this._room).emit('game:countdown', { seconds: count });
     this._broadcastLobbyState();
 
     const tick = setInterval(() => {
       count--;
-      this.io.emit('game:countdown', { seconds: count });
+      this.io.to(this._room).emit('game:countdown', { seconds: count });
       if (count <= 0) {
         clearInterval(tick);
         this._countdownActive = false;
@@ -713,11 +686,11 @@ class GameServer {
     // Tell ALL clients about every player's respawn so remote models
     // update positions immediately (not waiting for the next game:state tick)
     for (const [id, p] of this.players) {
-      this.io.emit('player:respawned', { id, x: p.x, y: p.y, z: p.z, hp: p.hp, class: p.class });
+      this.io.to(this._room).emit('player:respawned', { id, x: p.x, y: p.y, z: p.z, hp: p.hp, class: p.class });
     }
 
     // Announce match start to all players
-    this.io.emit('announcement', { type: 'match_start' });
+    this.io.to(this._room).emit('announcement', { type: 'match_start' });
 
     this._broadcastLobbyState();
 
@@ -727,7 +700,7 @@ class GameServer {
 
   _endRound() {
     this.gameState = 'results';
-    this.io.emit('announcement', { type: 'match_end' });
+    this.io.to(this._room).emit('announcement', { type: 'match_end' });
 
     // ── Commit match stats to DB ────────────────────────────────
     const matchId = this._currentMatchId;
@@ -923,7 +896,7 @@ class GameServer {
         kills: p.kills, deaths: p.deaths, dead: p.dead, hp: p.hp,
       })),
     };
-    this.io.emit('game:lobby_state', data);
+    this.io.to(this._room).emit('game:lobby_state', data);
   }
 
   isHost(username) {

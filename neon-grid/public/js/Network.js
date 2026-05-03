@@ -1,41 +1,71 @@
 export class Network {
   constructor() {
-    this._socket = io();
+    this._socket        = io();
     this._remotePlayers = new Map();
-    this._localId = null;
-    this._moveInterval = null;
-    this._cameraRef = null;
-    this._controlsRef = null;
-    this._playerClass = 'SOLDIER';
+    this._localId       = null;
+    this._moveInterval  = null;
+    this._cameraRef     = null;
+    this._controlsRef   = null;
+    this._playerClass   = 'SOLDIER';
+    this._lobbyCode     = null;
 
-    // Combat callbacks — set by main.js
+    // ── Combat callbacks ──────────────────────────────────────────
     this.onHit        = null;
     this.onDamaged    = null;
     this.onKilled     = null;
     this.onRespawned  = null;
     this.onXpUpdate   = null;
 
-    // Round / lobby callbacks
+    // ── Lobby / round callbacks ───────────────────────────────────
     this.onLobbyState   = null;
     this.onAnnouncement = null;
     this.onCountdown    = null;
+    this.onLobbyCode    = null;   // receives the room code (host display)
+    this.onLobbyError   = null;
 
     const storedName  = localStorage.getItem('ng_username');
     const storedClass = localStorage.getItem('ng_class');
 
     this._username    = storedName  || ('Ghost_' + String(Math.floor(Math.random() * 9000) + 1000));
-    this._playerClass = storedClass || 'SOLDIER';
+    this._playerClass = storedClass || 'WRAITH';
 
+    // Read lobby code from URL (?code=XXXXXX)
+    const urlParams    = new URLSearchParams(window.location.search);
+    this._lobbyCode    = (urlParams.get('code') || '').toUpperCase().trim();
+
+    // ── Connect: announce self to server and enter the lobby ──────
     this._socket.on('connect', () => {
       this._localId = this._socket.id;
-      const token = localStorage.getItem('neon_token') || null;
-      this._socket.emit('player:join', {
+      const token   = localStorage.getItem('neon_token') || null;
+
+      this._socket.emit('lobby:enter', {
+        code:     this._lobbyCode,
         username: this._username,
-        class: this._playerClass,
+        class:    this._playerClass,
         token,
       });
     });
 
+    // ── Lobby events ──────────────────────────────────────────────
+    this._socket.on('lobby:code', ({ code }) => {
+      this._lobbyCode = code;
+      if (this.onLobbyCode) this.onLobbyCode(code);
+    });
+
+    this._socket.on('lobby:error', ({ message }) => {
+      if (this.onLobbyError) {
+        this.onLobbyError(message);
+      } else {
+        alert(`Match error: ${message}`);
+        window.location.href = '/';
+      }
+    });
+
+    this._socket.on('lobby:left', () => {
+      window.location.href = '/';
+    });
+
+    // ── Game state ────────────────────────────────────────────────
     this._socket.on('game:state', ({ players }) => {
       players.forEach((p) => {
         if (p.id === this._localId) return;
@@ -115,12 +145,11 @@ export class Network {
     }, 33);
   }
 
-  sendStartRound() { this._socket.emit('game:start'); }
+  sendStartRound()         { this._socket.emit('game:start'); }
+  sendVoteMap(mapId)       { this._socket.emit('game:vote_map',   { mapId }); }
+  sendSetRounds(target)    { this._socket.emit('game:set_rounds', { target }); }
+  leaveLobby()             { this._socket.emit('game:leave'); }
 
-  sendVoteMap(mapId)     { this._socket.emit('game:vote_map',   { mapId }); }
-  sendSetRounds(target)  { this._socket.emit('game:set_rounds', { target }); }
-
-  // targetId, distance, hitZone optional — only provided when a player is hit
   sendShoot(origin, direction, targetId = null, distance = 0, hitZone = null) {
     const payload = { origin, direction, weaponClass: this._playerClass };
     if (targetId) {
@@ -131,6 +160,7 @@ export class Network {
     this._socket.emit('player:shoot', payload);
   }
 
+  getLobbyCode()     { return this._lobbyCode; }
   getLocalId()       { return this._localId; }
   getRemotePlayers() { return Array.from(this._remotePlayers.values()); }
 }

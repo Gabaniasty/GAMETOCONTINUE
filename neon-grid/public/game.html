@@ -688,6 +688,46 @@
       color: rgba(200,200,255,0.2);
     }
 
+    /* ── ESC / pause menu ── */
+    #pause-menu {
+      display: none;
+      position: fixed; inset: 0; z-index: 950;
+      background: rgba(2,2,10,0.82);
+      backdrop-filter: blur(6px);
+      flex-direction: column; align-items: center; justify-content: center;
+      gap: 1.2rem;
+    }
+    #pause-menu.open { display: flex; }
+    .pause-title {
+      font-family: 'Orbitron', sans-serif; font-weight: 900;
+      font-size: 1.2rem; letter-spacing: 0.45em; color: #00f5ff;
+      text-shadow: 0 0 18px #00f5ff;
+      margin-bottom: 0.5rem;
+    }
+    .pause-btn {
+      font-family: 'Orbitron', sans-serif; font-weight: 700;
+      font-size: 0.72rem; letter-spacing: 0.3em; text-transform: uppercase;
+      padding: 0.85rem 2.8rem;
+      border: 1px solid rgba(0,245,255,0.25);
+      background: rgba(2,2,10,0.6);
+      color: rgba(224,224,255,0.7);
+      cursor: pointer; transition: all 0.15s;
+    }
+    .pause-btn:hover {
+      border-color: #00f5ff; color: #00f5ff;
+      box-shadow: 0 0 14px rgba(0,245,255,0.25);
+    }
+    .pause-btn.danger { border-color: rgba(255,45,120,0.3); color: rgba(255,45,120,0.7); }
+    .pause-btn.danger:hover {
+      border-color: #ff2d78; color: #ff2d78;
+      box-shadow: 0 0 14px rgba(255,45,120,0.25);
+    }
+    .pause-hint {
+      font-family: 'Orbitron', sans-serif; font-size: 0.4rem;
+      letter-spacing: 0.28em; color: rgba(224,224,255,0.22);
+      margin-top: 0.3rem;
+    }
+
     /* ── Match winner banner ── */
     #match-winner-banner {
       display: none;
@@ -790,6 +830,21 @@
       <div id="lobby-subtitle">TACTICAL ARENA · CYBERPUNK FPS</div>
       <div id="lobby-state-label">LOBBY</div>
 
+      <!-- ── Lobby code (visible to all players; host shares this) ── -->
+      <div id="lobby-code-row" style="
+        display:none; margin: 0.5rem 0 0.2rem;
+        flex-direction:column; align-items:center; gap:4px;">
+        <div style="font-size:0.44rem; letter-spacing:0.35em; color:rgba(0,245,255,0.45);">INVITE CODE — SHARE WITH FRIENDS</div>
+        <div id="lobby-code-display" style="
+          font-size:2rem; font-weight:900; letter-spacing:0.35em;
+          color:#00f5ff; text-shadow:0 0 18px #00f5ff, 0 0 36px rgba(0,245,255,0.4);
+          cursor:pointer; user-select:all;"
+          title="Click to copy"></div>
+        <div id="lobby-code-copied" style="
+          font-size:0.4rem; letter-spacing:0.25em; color:#00f5ff;
+          opacity:0; transition:opacity 0.3s;">COPIED TO CLIPBOARD</div>
+      </div>
+
       <div id="lobby-players-section">
         <div id="lobby-players-header">OPERATIVES [0 / 10]</div>
         <div id="lobby-players-list"></div>
@@ -853,6 +908,14 @@
       <span class="rwh-name" id="rwh-right-name">OPP</span>
       <span class="rwh-kills" id="rwh-right-kills">0</span>
     </div>
+  </div>
+
+  <!-- ── ESC / pause menu ── -->
+  <div id="pause-menu">
+    <div class="pause-title">PAUSED</div>
+    <button class="pause-btn" id="pause-resume">RESUME</button>
+    <button class="pause-btn danger" id="pause-quit">LEAVE MATCH</button>
+    <div class="pause-hint">ESC TO RESUME</div>
   </div>
 
   <!-- ── Match winner banner ── -->

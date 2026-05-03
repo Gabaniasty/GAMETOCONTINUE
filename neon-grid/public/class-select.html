@@ -270,9 +270,16 @@
 
     let selected = localStorage.getItem('ng_class') || null;
 
+    // Preserve ?code= param from the URL through navigation
+    const _lobbyCode = new URLSearchParams(location.search).get('code') || '';
+
     function navigate(url) {
       document.body.classList.add('page-exit');
       setTimeout(() => { window.location.href = url; }, 280);
+    }
+    function navigateGame() {
+      const dest = _lobbyCode ? `/game.html?code=${_lobbyCode}` : '/game.html';
+      navigate(dest);
     }
 
     function pct(val, max) { return Math.round(val / max * 100); }
@@ -349,7 +356,7 @@
     document.getElementById('confirm-btn').addEventListener('click', () => {
       if (!selected) return;
       localStorage.setItem('ng_class', selected);
-      navigate('/game.html');
+      navigateGame();
     });
 
     document.getElementById('back-btn').addEventListener('click', () => {
