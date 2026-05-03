@@ -124,7 +124,7 @@ function _buildSky(scene) {
 
   // Sky sphere (inside-out)
   _skyTexture = new THREE.CanvasTexture(animCanvas);
-  const skyMat = new THREE.MeshBasicMaterial({ map: _skyTexture, side: THREE.BackSide });
+  const skyMat = new THREE.MeshBasicMaterial({ map: _skyTexture, side: THREE.BackSide, fog: false });
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(190, 32, 20), skyMat));
 
   // Atmospheric fog and hemisphere light
