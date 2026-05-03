@@ -115,9 +115,10 @@ export class Network {
     }, 33);
   }
 
-  sendStartRound() {
-    this._socket.emit('game:start');
-  }
+  sendStartRound() { this._socket.emit('game:start'); }
+
+  sendVoteMap(mapId)     { this._socket.emit('game:vote_map',   { mapId }); }
+  sendSetRounds(target)  { this._socket.emit('game:set_rounds', { target }); }
 
   // targetId, distance, hitZone optional — only provided when a player is hit
   sendShoot(origin, direction, targetId = null, distance = 0, hitZone = null) {

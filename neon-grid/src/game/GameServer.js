@@ -212,12 +212,19 @@ class GameServer {
     this.mapAABBs     = ARENA_AABBS;
     this._bounds      = BOUNDS_TERMINAL;
 
+    // ── Map voting ────────────────────────────────────────────────
+    this._mapVotes    = new Map();   // socketId → 'TERMINAL'|'OVERWATCH'
+
     // ── Round system ─────────────────────────────────────────────
     this.gameState      = 'lobby';   // 'lobby' | 'playing' | 'results'
     this.hostId         = null;
     this._roundTimer    = null;
     this._currentMatchId  = null;
     this._roundStartTime  = 0;
+
+    // ── Kill target (first-to-N wins the match) ───────────────────
+    this.roundTarget      = 10;      // host can change to 5, 10, 15, 20
+    this._endScheduled    = false;   // prevent double _endRound calls
 
     // ── Kill-streak & announcements ───────────────────────────────
     this._firstBloodFired = false;
@@ -377,6 +384,25 @@ class GameServer {
         socket.emit('game:map', { mapId: this.currentMap });
       });
 
+      // ── Map vote ─────────────────────────────────────────────────
+      socket.on('game:vote_map', ({ mapId }) => {
+        if (this.gameState !== 'lobby') return;
+        if (mapId !== 'TERMINAL' && mapId !== 'OVERWATCH') return;
+        this._mapVotes.set(socket.id, mapId);
+        this._broadcastLobbyState();
+      });
+
+      // ── Round target (host only) ──────────────────────────────────
+      socket.on('game:set_rounds', ({ target }) => {
+        if (socket.id !== this.hostId) return;
+        if (this.gameState !== 'lobby') return;
+        const t = parseInt(target);
+        if ([5, 10, 15, 20].includes(t)) {
+          this.roundTarget = t;
+          this._broadcastLobbyState();
+        }
+      });
+
       // ── Shoot handler ────────────────────────────────────────────
       socket.on('player:shoot', ({ origin, direction, weaponClass, targetId, distance, hitZone }) => {
         // No damage outside an active round
@@ -456,6 +482,27 @@ class GameServer {
 
           // Track headshot kills
           if (isHead) shooter.headshots = (shooter.headshots || 0) + 1;
+
+          // Broadcast updated kill counts for HUD
+          this.io.emit('game:kills_update', {
+            kills: Array.from(this.players.values()).map(p => ({
+              id: p.id, username: p.username, kills: p.kills,
+            })),
+            roundTarget: this.roundTarget,
+          });
+
+          // ── Check if shooter reached the kill target ──────────────
+          if (shooter.kills >= this.roundTarget && !this._endScheduled) {
+            this._endScheduled = true;
+            clearTimeout(this._roundTimer);
+            this.io.emit('game:match_winner', {
+              winnerId:   socket.id,
+              winnerName: shooter.username,
+              kills:      shooter.kills,
+              target:     this.roundTarget,
+            });
+            setTimeout(() => this._endRound(), 4000);
+          }
 
           const weaponName = (weaponClass || shooter.class) === 'WRAITH' ? 'AWP'
             : (weaponClass || shooter.class) === 'GHOST' ? 'SMG' : 'AK47';
@@ -605,6 +652,13 @@ class GameServer {
   _startCountdown() {
     if (this._countdownActive) return;
     this._countdownActive = true;
+
+    // Tally map votes and apply the winner before counting down
+    const tally = { TERMINAL: 0, OVERWATCH: 0 };
+    for (const v of this._mapVotes.values()) tally[v] = (tally[v] || 0) + 1;
+    const chosenMap = tally.OVERWATCH > tally.TERMINAL ? 'OVERWATCH' : 'TERMINAL';
+    this._applyMap(chosenMap);
+
     let count = 5;
     this.io.emit('game:countdown', { seconds: count });
     this._broadcastLobbyState();
@@ -624,6 +678,7 @@ class GameServer {
   _startRound() {
     this.gameState       = 'playing';
     this._roundStartTime = Date.now();
+    this._endScheduled   = false;
 
     // Reset announcement state for the new match
     this._firstBloodFired = false;
@@ -839,17 +894,30 @@ class GameServer {
         const hp = (CLASSES[p.class] || CLASSES.SOLDIER).hp;
         Object.assign(p, { x: sp.x, y: sp.y, z: sp.z, hp, dead: false });
       }
-      this.gameState = 'lobby';
+      this.gameState    = 'lobby';
+      this._endScheduled = false;
+      this._mapVotes.clear();
       this._broadcastLobbyState();
     }, 12000);
   }
 
   _broadcastLobbyState() {
+    const voteCount   = { TERMINAL: 0, OVERWATCH: 0 };
+    const playerVotes = {};
+    for (const [id, v] of this._mapVotes.entries()) {
+      voteCount[v] = (voteCount[v] || 0) + 1;
+      playerVotes[id] = v;
+    }
+
     const data = {
       gameState:   this.gameState,
       hostId:      this.hostId,
       playerCount: this.players.size,
       maxPlayers:  MAX_PLAYERS,
+      roundTarget: this.roundTarget,
+      currentMap:  this.currentMap,
+      mapVotes:    voteCount,
+      playerVotes,
       players: Array.from(this.players.values()).map(p => ({
         id: p.id, username: p.username, class: p.class,
         kills: p.kills, deaths: p.deaths, dead: p.dead, hp: p.hp,

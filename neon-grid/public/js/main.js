@@ -252,7 +252,7 @@ network.onRespawned = ({ id, x, y, z, hp }) => {
     // Reset AWP ammo on respawn
     if (game._awpWeapon) {
       game._awpWeapon.ammo    = game._awpWeapon._maxMag;
-      game._awpWeapon.reserve = 25;
+      game._awpWeapon.reserve = Infinity;
       game._awpWeapon.isReloading = false;
       game._awpWeapon._updateAmmoHud();
       const rl = document.getElementById('awp-reload-bar');
@@ -315,22 +315,64 @@ network.onKilled = (...args) => {
 };
 
 // ── Lobby overlay ─────────────────────────────────────────────────
-const _lobbyOverlay   = document.getElementById('lobby-overlay');
-const _lobbyList      = document.getElementById('lobby-players-list');
-const _lobbyHeader    = document.getElementById('lobby-players-header');
-const _lobbyStartBtn  = document.getElementById('lobby-start-btn');
-const _lobbyHint      = document.getElementById('lobby-hint');
+const _lobbyOverlay    = document.getElementById('lobby-overlay');
+const _lobbyList       = document.getElementById('lobby-players-list');
+const _lobbyHeader     = document.getElementById('lobby-players-header');
+const _lobbyStartBtn   = document.getElementById('lobby-start-btn');
+const _lobbyHint       = document.getElementById('lobby-hint');
 const _lobbyStateLabel = document.getElementById('lobby-state-label');
-const _lobbyResults   = document.getElementById('lobby-results');
-const _resultsScores  = document.getElementById('results-scores');
-const _lobbyCountdown = document.getElementById('lobby-countdown');
+const _lobbyResults    = document.getElementById('lobby-results');
+const _resultsScores   = document.getElementById('results-scores');
+const _lobbyCountdown  = document.getElementById('lobby-countdown');
+
+// ── Map vote refs ──────────────────────────────────────────────────
+const _mapCards        = document.querySelectorAll('.map-card');
+const _votesTERMINAL   = document.getElementById('votes-TERMINAL');
+const _votesOVERWATCH  = document.getElementById('votes-OVERWATCH');
+
+// ── Round selector refs ────────────────────────────────────────────
+const _roundsBtns       = document.querySelectorAll('.round-btn');
+const _roundsTargetLbl  = document.getElementById('rounds-target-label');
+
+// ── Round wins HUD refs ────────────────────────────────────────────
+const _rwHud            = document.getElementById('round-wins-hud');
+const _rwhLeftName      = document.getElementById('rwh-left-name');
+const _rwhLeftKills     = document.getElementById('rwh-left-kills');
+const _rwhRightName     = document.getElementById('rwh-right-name');
+const _rwhRightKills    = document.getElementById('rwh-right-kills');
+const _rwhTargetEl      = document.getElementById('rwh-target');
+
+// ── Match winner banner refs ───────────────────────────────────────
+const _mwBanner   = document.getElementById('match-winner-banner');
+const _mwTitle    = document.getElementById('mwb-title');
+const _mwSub      = document.getElementById('mwb-sub');
 
 const _CC = { SOLDIER: '#00f5ff', GHOST: '#ff2d78', WRAITH: '#7b2fff' };
-let _cdTimer = null;
+let _cdTimer    = null;
+let _roundTarget = 10;
 
-network.onLobbyState = ({ gameState, hostId, players, maxPlayers }) => {
+// ── Update round wins HUD from a kills array [{id, username, kills}] ──
+function _updateRwHud(kills) {
+  if (!_rwHud) return;
+  const localId = network.getLocalId();
+  const local   = kills.find(k => k.id === localId);
+  const remotes = kills.filter(k => k.id !== localId);
+
+  _rwhLeftKills.textContent  = local ? (local.kills || 0) : 0;
+  _rwhRightKills.textContent = remotes.length ? (remotes[0].kills || 0) : 0;
+  _rwhRightName.textContent  = remotes.length ? remotes[0].username.slice(0, 7).toUpperCase() : 'OPP';
+  _rwhTargetEl.textContent   = _roundTarget;
+}
+
+network.onLobbyState = ({ gameState, hostId, players, maxPlayers, roundTarget, mapVotes, playerVotes }) => {
   const localId = network.getLocalId();
   const isHost  = hostId === localId;
+
+  if (roundTarget) {
+    _roundTarget = roundTarget;
+    if (_roundsTargetLbl) _roundsTargetLbl.textContent = roundTarget;
+    if (_rwhTargetEl)     _rwhTargetEl.textContent     = roundTarget;
+  }
 
   // ── Rebuild player list ─────────────────────────────────────────
   _lobbyHeader.textContent = `OPERATIVES [${players.length} / ${maxPlayers}]`;
@@ -349,6 +391,30 @@ network.onLobbyState = ({ gameState, hostId, players, maxPlayers }) => {
     _lobbyList.appendChild(row);
   });
 
+  // ── Update map vote counts ──────────────────────────────────────
+  if (mapVotes) {
+    const tCount = mapVotes.TERMINAL || 0;
+    const oCount = mapVotes.OVERWATCH || 0;
+    if (_votesTERMINAL)  _votesTERMINAL.textContent  = tCount === 1 ? '1 VOTE' : `${tCount} VOTES`;
+    if (_votesOVERWATCH) _votesOVERWATCH.textContent = oCount === 1 ? '1 VOTE' : `${oCount} VOTES`;
+  }
+
+  // ── Highlight the local player's voted map card ─────────────────
+  if (playerVotes && localId) {
+    const myVote = playerVotes[localId];
+    _mapCards.forEach(card => {
+      card.classList.toggle('voted', card.dataset.map === myVote);
+    });
+  }
+
+  // ── Update round selector active button ─────────────────────────
+  if (roundTarget) {
+    _roundsBtns.forEach(btn => {
+      btn.classList.toggle('active', parseInt(btn.dataset.rounds) === roundTarget);
+      btn.disabled = !isHost;
+    });
+  }
+
   if (gameState === 'lobby') {
     _lobbyStateLabel.textContent = players.length >= maxPlayers ? 'ROUND STARTING…' : 'LOBBY';
     _lobbyResults.style.display  = 'none';
@@ -361,12 +427,19 @@ network.onLobbyState = ({ gameState, hostId, players, maxPlayers }) => {
     if (_cdTimer) { clearInterval(_cdTimer); _cdTimer = null; }
     game.controls.roundActive = false;
     if (document.pointerLockElement) document.exitPointerLock();
+    if (_rwHud) _rwHud.style.display = 'none';
+    if (_mwBanner) _mwBanner.style.display = 'none';
 
   } else if (gameState === 'playing') {
     _lobbyOverlay.style.display = 'none';
     if (_cdTimer) { clearInterval(_cdTimer); _cdTimer = null; }
     game.controls.roundActive = true;
     sound.startAmbient();
+    // Show round wins HUD — seed with current kill data
+    if (_rwHud) {
+      _rwHud.style.display = 'flex';
+      _updateRwHud(players.map(p => ({ id: p.id, username: p.username, kills: p.kills })));
+    }
 
   } else if (gameState === 'results') {
     _lobbyStateLabel.textContent = 'ROUND OVER';
@@ -376,6 +449,7 @@ network.onLobbyState = ({ gameState, hostId, players, maxPlayers }) => {
     _lobbyOverlay.style.display  = 'flex';
     game.controls.roundActive    = false;
     if (document.pointerLockElement) document.exitPointerLock();
+    if (_rwHud) _rwHud.style.display = 'none';
 
     // Results table sorted by kills
     const sorted = [...players].sort((a, b) => (b.kills || 0) - (a.kills || 0));
@@ -413,6 +487,42 @@ network.onLobbyState = ({ gameState, hostId, players, maxPlayers }) => {
 };
 
 _lobbyStartBtn.addEventListener('click', () => network.sendStartRound());
+
+// ── Map vote card clicks ───────────────────────────────────────────
+_mapCards.forEach(card => {
+  card.addEventListener('click', () => {
+    network.sendVoteMap(card.dataset.map);
+  });
+});
+
+// ── Round target button clicks ────────────────────────────────────
+_roundsBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const t = parseInt(btn.dataset.rounds);
+    network.sendSetRounds(t);
+  });
+});
+
+// ── Real-time kill update → round wins HUD ────────────────────────
+network._socket.on('game:kills_update', ({ kills, roundTarget: rt }) => {
+  if (rt) {
+    _roundTarget = rt;
+    if (_rwhTargetEl) _rwhTargetEl.textContent = rt;
+  }
+  _updateRwHud(kills);
+});
+
+// ── Match winner announcement ─────────────────────────────────────
+network._socket.on('game:match_winner', ({ winnerId, winnerName, kills, target }) => {
+  if (!_mwBanner || !_mwTitle || !_mwSub) return;
+  const isWinner = winnerId === network.getLocalId();
+  _mwTitle.textContent = isWinner ? 'VICTORY' : `${winnerName.toUpperCase()} WINS`;
+  _mwTitle.style.color = isWinner ? '#00f5ff' : '#ff2d78';
+  _mwSub.textContent   = `${kills} / ${target} KILLS`;
+  _mwBanner.style.display = 'block';
+  if (_rwHud) _rwHud.style.display = 'none';
+  setTimeout(() => { if (_mwBanner) _mwBanner.style.display = 'none'; }, 4000);
+});
 
 // ── Round countdown ────────────────────────────────────────────────
 network.onCountdown = (seconds) => {
@@ -522,7 +632,7 @@ game._animate = function () {
 // This ensures every client — with or without a ?map= URL param — loads
 // the same map the server is using for collision / LOS validation.
 
-let _mapLoaded = false;
+let _loadedMapId = null;
 
 // ── FOV + audio + settings listener ─────────────────────────────────
 document.addEventListener('ng-settings-changed', (e) => {
@@ -559,8 +669,18 @@ if (_storedMotionBlur === '1' || _storedMotionBlur === 'true') {
 }
 
 function _loadMap(mapId) {
-  if (_mapLoaded) return;
-  _mapLoaded = true;
+  if (_loadedMapId === mapId) return;   // already have this exact map
+
+  // If switching maps (vote winner differs from initial load), clear old geometry
+  if (_loadedMapId !== null) {
+    const toRemove = [];
+    game.scene.traverse(obj => { if (obj.isMesh) toRemove.push(obj); });
+    toRemove.forEach(obj => { game.scene.remove(obj); });
+    game.controls.setCollidableMeshes([]);
+    bullets.setCollidableMeshes([]);
+  }
+
+  _loadedMapId = mapId;
 
   if (window._advanceLoadingStage) window._advanceLoadingStage(0);
   const loadingText = document.getElementById('loadingText');

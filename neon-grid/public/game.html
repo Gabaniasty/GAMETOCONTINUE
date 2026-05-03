@@ -237,9 +237,9 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 18px;
-      width: 520px;
-      max-width: 92vw;
+      gap: 14px;
+      width: 680px;
+      max-width: 96vw;
     }
 
     #lobby-title {
@@ -510,6 +510,208 @@
       border-radius: 2px;
       transition: width 0.08s linear;
     }
+
+    /* ── Lobby section sub-header ── */
+    .lsec-header {
+      font-size: 0.46rem;
+      letter-spacing: 0.28em;
+      color: rgba(0,245,255,0.38);
+      padding-bottom: 6px;
+      width: 100%;
+    }
+    .lsec-note {
+      display: inline;
+      color: rgba(0,245,255,0.22);
+      font-size: 0.42rem;
+      letter-spacing: 0.12em;
+    }
+
+    /* ── Map vote section ── */
+    #lobby-map-vote { width: 100%; }
+    .map-cards {
+      display: flex;
+      gap: 10px;
+      width: 100%;
+    }
+    .map-card {
+      flex: 1;
+      border: 1px solid rgba(255,255,255,0.09);
+      background: rgba(0,5,20,0.55);
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      user-select: none;
+    }
+    .map-card:hover { border-color: rgba(0,245,255,0.3); background: rgba(0,10,30,0.7); }
+    .map-card[data-map="OVERWATCH"]:hover { border-color: rgba(123,47,255,0.35); }
+    .map-card.voted[data-map="TERMINAL"] {
+      border-color: #00f5ff;
+      box-shadow: 0 0 14px rgba(0,245,255,0.2);
+      background: rgba(0,20,40,0.6);
+    }
+    .map-card.voted[data-map="OVERWATCH"] {
+      border-color: #7b2fff;
+      box-shadow: 0 0 14px rgba(123,47,255,0.22);
+      background: rgba(10,0,30,0.6);
+    }
+    .mc-name {
+      font-size: 0.78rem;
+      font-weight: 900;
+      letter-spacing: 0.2em;
+      color: #00f5ff;
+    }
+    .map-card[data-map="OVERWATCH"] .mc-name { color: #7b2fff; text-shadow: 0 0 8px #7b2fff40; }
+    .mc-desc {
+      font-size: 0.44rem;
+      letter-spacing: 0.1em;
+      color: rgba(180,180,220,0.42);
+      line-height: 1.55;
+    }
+    .mc-votes {
+      font-size: 0.46rem;
+      letter-spacing: 0.18em;
+      color: rgba(0,245,255,0.5);
+      margin-top: 5px;
+    }
+    .map-card[data-map="OVERWATCH"] .mc-votes { color: rgba(123,47,255,0.6); }
+    .mc-tag {
+      display: inline-block;
+      font-size: 0.38rem;
+      letter-spacing: 0.2em;
+      padding: 2px 6px;
+      background: rgba(0,245,255,0.1);
+      border: 1px solid rgba(0,245,255,0.2);
+      color: rgba(0,245,255,0.6);
+      margin-top: 3px;
+      width: fit-content;
+    }
+    .map-card[data-map="OVERWATCH"] .mc-tag {
+      background: rgba(123,47,255,0.1);
+      border-color: rgba(123,47,255,0.2);
+      color: rgba(123,47,255,0.65);
+    }
+
+    /* ── Round selector ── */
+    #lobby-rounds { width: 100%; }
+    #rounds-btns {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+      width: 100%;
+    }
+    .round-btn {
+      flex: 1;
+      padding: 9px 0;
+      font-family: 'Orbitron', monospace;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      background: transparent;
+      border: 1px solid rgba(0,245,255,0.18);
+      color: rgba(0,245,255,0.45);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .round-btn:hover:not(:disabled) {
+      border-color: rgba(0,245,255,0.5);
+      color: #00f5ff;
+      background: rgba(0,245,255,0.06);
+    }
+    .round-btn.active {
+      border-color: #00f5ff;
+      color: #00f5ff;
+      background: rgba(0,245,255,0.1);
+      box-shadow: 0 0 12px rgba(0,245,255,0.18);
+    }
+    .round-btn:disabled { opacity: 0.28; cursor: default; }
+
+    /* ── Round wins HUD (top-center during gameplay) ── */
+    #round-wins-hud {
+      position: fixed;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: none;
+      align-items: center;
+      gap: 12px;
+      background: rgba(1,1,14,0.78);
+      border: 1px solid rgba(0,245,255,0.15);
+      padding: 5px 20px 7px;
+      z-index: 60;
+      pointer-events: none;
+      font-family: 'Orbitron', monospace;
+      backdrop-filter: blur(6px);
+      white-space: nowrap;
+    }
+    .rwh-side {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+      min-width: 54px;
+    }
+    .rwh-name {
+      font-size: 0.38rem;
+      letter-spacing: 0.22em;
+      color: rgba(200,200,255,0.38);
+    }
+    .rwh-kills {
+      font-size: 1.5rem;
+      font-weight: 900;
+      line-height: 1.1;
+    }
+    #rwh-left  .rwh-kills { color: #00f5ff; text-shadow: 0 0 10px #00f5ff80; }
+    #rwh-right .rwh-kills { color: #ff2d78; text-shadow: 0 0 10px #ff2d7880; }
+    #rwh-sep {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+    #rwh-sep-slash {
+      font-size: 0.38rem;
+      letter-spacing: 0.15em;
+      color: rgba(200,200,255,0.22);
+    }
+    #rwh-target {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: rgba(0,245,255,0.4);
+      letter-spacing: 0.1em;
+    }
+    #rwh-label {
+      font-size: 0.34rem;
+      letter-spacing: 0.18em;
+      color: rgba(200,200,255,0.2);
+    }
+
+    /* ── Match winner banner ── */
+    #match-winner-banner {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 900;
+      font-family: 'Orbitron', monospace;
+      text-align: center;
+      pointer-events: none;
+    }
+    #mwb-title {
+      font-size: clamp(2rem, 6vw, 3.5rem);
+      font-weight: 900;
+      letter-spacing: 0.3em;
+      text-shadow: 0 0 30px currentColor;
+    }
+    #mwb-sub {
+      font-size: 0.6rem;
+      letter-spacing: 0.35em;
+      color: rgba(200,200,255,0.5);
+      margin-top: 8px;
+    }
   </style>
 </head>
 <body>
@@ -593,6 +795,36 @@
         <div id="lobby-players-list"></div>
       </div>
 
+      <!-- ── Map voting ─────────────────────────────────────────── -->
+      <div id="lobby-map-vote">
+        <div class="lsec-header">VOTE FOR MAP</div>
+        <div class="map-cards">
+          <div class="map-card" data-map="TERMINAL">
+            <div class="mc-name">TERMINAL</div>
+            <div class="mc-desc">Industrial server complex — corridors, catwalks &amp; tight angles</div>
+            <div class="mc-tag">CLOSE RANGE</div>
+            <div class="mc-votes" id="votes-TERMINAL">0 VOTES</div>
+          </div>
+          <div class="map-card" data-map="OVERWATCH">
+            <div class="mc-name">OVERWATCH</div>
+            <div class="mc-desc">Open rooftop combat zone — elevated nests &amp; long sightlines</div>
+            <div class="mc-tag">LONG RANGE</div>
+            <div class="mc-votes" id="votes-OVERWATCH">0 VOTES</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Kill target selector ──────────────────────────────── -->
+      <div id="lobby-rounds">
+        <div class="lsec-header">KILL TARGET &nbsp;<span class="lsec-note" id="rounds-note">FIRST TO <span id="rounds-target-label">10</span> KILLS WINS THE MATCH</span></div>
+        <div id="rounds-btns">
+          <button class="round-btn" data-rounds="5">5</button>
+          <button class="round-btn active" data-rounds="10">10</button>
+          <button class="round-btn" data-rounds="15">15</button>
+          <button class="round-btn" data-rounds="20">20</button>
+        </div>
+      </div>
+
       <div id="lobby-actions">
         <button id="lobby-start-btn">START ROUND</button>
         <div id="lobby-hint">WAITING FOR HOST TO START THE ROUND…</div>
@@ -604,6 +836,29 @@
         <div id="lobby-countdown"></div>
       </div>
     </div>
+  </div>
+
+  <!-- ── Round wins HUD (top-center, visible during gameplay) ── -->
+  <div id="round-wins-hud">
+    <div class="rwh-side" id="rwh-left">
+      <span class="rwh-name" id="rwh-left-name">YOU</span>
+      <span class="rwh-kills" id="rwh-left-kills">0</span>
+    </div>
+    <div id="rwh-sep">
+      <span id="rwh-label">KILLS</span>
+      <span id="rwh-target">10</span>
+      <span id="rwh-sep-slash">TARGET</span>
+    </div>
+    <div class="rwh-side" id="rwh-right">
+      <span class="rwh-name" id="rwh-right-name">OPP</span>
+      <span class="rwh-kills" id="rwh-right-kills">0</span>
+    </div>
+  </div>
+
+  <!-- ── Match winner banner ── -->
+  <div id="match-winner-banner">
+    <div id="mwb-title">YOU WIN</div>
+    <div id="mwb-sub">MATCH COMPLETE</div>
   </div>
 
   <!-- Loading tips + cycling status logic -->
