@@ -146,8 +146,8 @@ export function buildCharacterModel(classColor, playerClass, username, level) {
     const vel  = velocity || { x: 0, y: 0, z: 0 };
     const hspd = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
     const moving    = hspd > 0.5;
-    const running   = hspd > 4.5;
-    const sprinting = isSprinting || hspd > 6.5;
+    const running   = hspd > 5.5;
+    const sprinting = isSprinting || hspd > 11.0;
 
     // Walk phase
     const phaseRate = sprinting ? 16 : running ? 13 : 9;

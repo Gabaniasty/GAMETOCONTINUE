@@ -425,6 +425,29 @@
       left: var(--ch-gap);
     }
 
+    /* ── Sprint indicator ── */
+    #sprint-indicator {
+      position: fixed;
+      bottom: 88px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: none;
+      align-items: center;
+      gap: 6px;
+      font-family: 'Orbitron', 'Courier New', monospace;
+      font-size: 0.62rem;
+      letter-spacing: 0.25em;
+      color: #00ff88;
+      text-shadow: 0 0 10px #00ff88, 0 0 20px #00ff88;
+      pointer-events: none;
+      z-index: 60;
+      animation: sprint-pulse 0.4s ease-in-out infinite alternate;
+    }
+    @keyframes sprint-pulse {
+      from { opacity: 0.7; }
+      to   { opacity: 1.0; }
+    }
+
     /* ── AWP ammo HUD ── */
     #awp-hud {
       position: fixed;
@@ -849,6 +872,9 @@
     <h2>CLICK TO PLAY</h2>
     <p>WASD — MOVE &nbsp;·&nbsp; MOUSE — AIM &nbsp;·&nbsp; SPACE — JUMP &nbsp;·&nbsp; SHIFT — SPRINT</p>
   </div>
+
+  <!-- Sprint indicator -->
+  <div id="sprint-indicator">⚡ SPRINTING</div>
 
   <!-- 4-arm gap crosshair -->
   <div id="crosshair">

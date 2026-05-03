@@ -746,6 +746,15 @@ game._animate = function () {
     }
   }
 
+  // ── Sprint indicator ──────────────────────────────────────────
+  const _sprintEl = document.getElementById('sprint-indicator');
+  if (_sprintEl && controls.isPlaying && !controls.isDead) {
+    const _spHspd = Math.sqrt(controls._vel.x ** 2 + controls._vel.z ** 2);
+    _sprintEl.style.display = (controls.isSprinting() && _spHspd > 0.5) ? 'flex' : 'none';
+  } else if (_sprintEl) {
+    _sprintEl.style.display = 'none';
+  }
+
   hud.tickFps(dt);
   hud.updateMinimap(camera.position, network.getRemotePlayers());
 

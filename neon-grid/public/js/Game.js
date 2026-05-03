@@ -195,13 +195,11 @@ export class Game {
   }
 
   tickWeapon(dt) {
-    const sprinting = this.controls &&
-                      this.controls.isSprinting() &&
-                      this.controls.isPlaying &&
-                      !this.controls.isDead &&
-                      (this.controls._vel
-                        ? (Math.abs(this.controls._vel.x) + Math.abs(this.controls._vel.z)) > 0.5
-                        : false);
+    const isSprinting = !!(this.controls && this.controls.isSprinting());
+    const actuallyMoving = !!(this.controls && this.controls._vel &&
+      (Math.abs(this.controls._vel.x) + Math.abs(this.controls._vel.z)) > 0.3);
+    const sprinting = isSprinting && actuallyMoving &&
+                      !!(this.controls && !this.controls.isDead && this.controls.isPlaying);
 
     // Sprint FOV kick (+8 degrees) — only when not scoped
     if (!this._isScoped) {
@@ -365,7 +363,7 @@ export class Game {
       // ── Procedural animation ─────────────────────────────────────
       const vel         = p.velocity || { x: 0, y: 0, z: 0 };
       const hspd        = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
-      const isSprinting = !!p.isSprinting || hspd > 6.5;
+      const isSprinting = !!p.isSprinting || hspd > 11.0;
       if (group.neon_animate) {
         group.neon_animate(dt, vel, !!p.isShooting, isSprinting);
       }
