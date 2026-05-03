@@ -272,10 +272,22 @@ export class Hud {
     const ammoLbl = document.createElement('div');
     ammoLbl.style.cssText = 'font-size:.42rem; letter-spacing:.2em; color:rgba(224,224,255,0.3);';
     ammoLbl.textContent = 'AMMO';
-    const ammoNum = document.createElement('div');
+    const ammoNum = this._el.ammoNum = document.createElement('div');
     ammoNum.style.cssText = 'font-size:2rem; font-weight:900; letter-spacing:.04em; color:rgba(224,224,255,0.8); line-height:1;';
     ammoNum.textContent = '∞';
-    ammoWrap.append(ammoLbl, ammoNum);
+
+    // Reload progress bar (hidden by default, shown for non-AWP weapons)
+    const reloadBar = this._el.reloadBar = document.createElement('div');
+    reloadBar.style.cssText = 'display:none; width:100%; height:3px; background:rgba(255,255,255,0.1); border-radius:2px; overflow:hidden; margin-top:3px;';
+    const reloadFill = this._el.reloadFill = document.createElement('div');
+    reloadFill.style.cssText = 'height:100%; width:0%; background:#00f5ff; border-radius:2px; transition:none;';
+    reloadBar.appendChild(reloadFill);
+
+    const reloadLbl = this._el.reloadLbl = document.createElement('div');
+    reloadLbl.style.cssText = 'display:none; font-size:.38rem; letter-spacing:.18em; color:#00f5ff; margin-top:1px;';
+    reloadLbl.textContent = 'RELOADING';
+
+    ammoWrap.append(ammoLbl, ammoNum, reloadBar, reloadLbl);
 
     const mapWrap = document.createElement('div');
     mapWrap.style.cssText = 'display:flex; flex-direction:column; align-items:flex-end; gap:3px;';
@@ -698,6 +710,23 @@ export class Hud {
     `;
     this._el.root.appendChild(el);
     setTimeout(() => el.remove(), 1100);
+  }
+
+  // ── Ammo display (non-AWP weapons) ──────────────────────────────────────
+  setAmmo(current, reserve) {
+    if (!this._el.ammoNum) return;
+    this._el.ammoNum.textContent = `${current} | ${reserve}`;
+  }
+
+  setReloading(isReloading) {
+    if (!this._el.reloadBar) return;
+    this._el.reloadBar.style.display = isReloading ? 'block' : 'none';
+    this._el.reloadLbl.style.display = isReloading ? 'block' : 'none';
+    if (!isReloading && this._el.reloadFill) this._el.reloadFill.style.width = '0%';
+  }
+
+  setReloadProgress(pct) {
+    if (this._el.reloadFill) this._el.reloadFill.style.width = (pct * 100).toFixed(1) + '%';
   }
 
   setHp(hp, maxHp) {

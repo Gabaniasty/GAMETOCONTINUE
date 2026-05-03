@@ -258,6 +258,10 @@ network.onRespawned = ({ id, x, y, z, hp }) => {
       const rl = document.getElementById('awp-reload-bar');
       if (rl) rl.style.display = 'none';
     }
+    // Reset non-AWP ammo on respawn
+    if (localClass !== 'WRAITH') {
+      game.controls.resetAmmo();
+    }
   }
 };
 
@@ -280,6 +284,26 @@ document.addEventListener('keyup', (e) => {
 if (localClass === 'WRAITH') {
   game.controls.onScope   = () => game.setScoped(true);
   game.controls.onUnscope = () => game.setScoped(false);
+  // Fix scope state sync: when AWP forces unscope (e.g. reload), reset Controls.isScoped
+  if (game._awpWeapon) {
+    game._awpWeapon._onForceUnscope = () => {
+      if (game.controls.isScoped) {
+        game.controls.isScoped = false;
+        game.setScoped(false);
+      }
+    };
+  }
+}
+
+// ── Non-AWP ammo HUD wiring (SOLDIER / GHOST) ──────────────────────
+if (localClass !== 'WRAITH') {
+  const initAmmo = classData.magazineSize ?? 30;
+  hud.setAmmo(initAmmo, initAmmo * 3);
+
+  game.controls.onAmmoChanged    = (ammo, reserve) => hud.setAmmo(ammo, reserve);
+  game.controls.onReloadStart    = ()    => hud.setReloading(true);
+  game.controls.onReloadEnd      = ()    => hud.setReloading(false);
+  game.controls.onReloadProgress = (pct) => hud.setReloadProgress(pct);
 }
 
 // Also unscope on death

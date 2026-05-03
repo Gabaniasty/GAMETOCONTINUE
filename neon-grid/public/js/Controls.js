@@ -82,6 +82,22 @@ export class Controls {
     this._playerClass  = localStorage.getItem('ng_class') || 'SOLDIER';
     this._lastShotTime = 0;
 
+    // ── Non-AWP ammo & reload (SOLDIER / GHOST only) ─────────────────────
+    this.onAmmoChanged    = null;
+    this.onReloadStart    = null;
+    this.onReloadEnd      = null;
+    this.onReloadProgress = null;
+
+    if (this._playerClass !== 'WRAITH') {
+      const cls         = CLASSES[this._playerClass] || CLASSES.SOLDIER;
+      this._ammo        = cls.magazineSize;
+      this._ammoMax     = cls.magazineSize;
+      this._reserve     = cls.magazineSize * 3;
+      this._isReloading = false;
+      this._reloadTimer = 0;
+      this._reloadDur   = (cls.reloadTime || 2400) / 1000;
+    }
+
     // Invert Y from settings
     this._invertY = localStorage.getItem('ng_invert_y') === 'true';
 
@@ -129,9 +145,47 @@ export class Controls {
     return true;
   }
 
+  // ── Non-AWP reload ───────────────────────────────────────────────────────
+  _startReload() {
+    if (this._playerClass === 'WRAITH') return;
+    if (this._isReloading) return;
+    if (this._ammo >= this._ammoMax) return;
+    if (this._reserve <= 0) return;
+    this._isReloading = true;
+    this._reloadTimer = this._reloadDur;
+    if (this.onReloadStart) this.onReloadStart(this._reloadDur);
+  }
+
+  resetAmmo() {
+    if (this._playerClass === 'WRAITH') return;
+    const cls         = CLASSES[this._playerClass] || CLASSES.SOLDIER;
+    this._ammo        = cls.magazineSize;
+    this._reserve     = cls.magazineSize * 3;
+    this._isReloading = false;
+    this._reloadTimer = 0;
+    if (this.onAmmoChanged) this.onAmmoChanged(this._ammo, this._reserve);
+    if (this.onReloadEnd)   this.onReloadEnd();
+  }
+
   // ── Main physics update ──────────────────────────────────────────────────
   update(camera, dt) {
     if (!this.isPlaying || this._inputLocked) return;
+
+    // ── Reload tick (non-WRAITH) ─────────────────────────────────────────
+    if (this._playerClass !== 'WRAITH' && this._isReloading) {
+      this._reloadTimer -= dt;
+      const pct = Math.max(0, 1 - this._reloadTimer / this._reloadDur);
+      if (this.onReloadProgress) this.onReloadProgress(pct);
+      if (this._reloadTimer <= 0) {
+        const needed      = this._ammoMax - this._ammo;
+        const loaded      = Math.min(needed, this._reserve);
+        this._ammo       += loaded;
+        this._reserve    -= loaded;
+        this._isReloading = false;
+        if (this.onAmmoChanged) this.onAmmoChanged(this._ammo, this._reserve);
+        if (this.onReloadEnd)   this.onReloadEnd();
+      }
+    }
 
     if (this._ladderCooldown > 0) this._ladderCooldown -= dt;
 
@@ -367,8 +421,19 @@ export class Controls {
           this.onAwpShoot();
           return;
         }
+        // WRAITH unscoped hip-fire: AWP handles its own rate limiting
+        if (this._playerClass === 'WRAITH') {
+          if (this.onShoot) this.onShoot();
+          return;
+        }
+        // SOLDIER / GHOST: ammo check → fire rate gate → fire → consume ammo
+        if (this._isReloading) return;
+        if (this._ammo <= 0) { this._startReload(); return; }
         if (!this._canShoot()) return;
         if (this.onShoot) this.onShoot();
+        this._ammo--;
+        if (this.onAmmoChanged) this.onAmmoChanged(this._ammo, this._reserve);
+        if (this._ammo <= 0 && this._reserve > 0) this._startReload();
         return;
       }
       if (e.button === 2) {
@@ -414,8 +479,9 @@ export class Controls {
         return;
       }
       if (this.isPlaying && !this.isDead) {
-        if ((e.code === 'KeyR') && this.onReload) {
-          this.onReload();
+        if (e.code === 'KeyR') {
+          if (this._playerClass === 'WRAITH') { if (this.onReload) this.onReload(); }
+          else this._startReload();
         }
         if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && this.isScoped && this.onHoldBreath) {
           if (!this._breathHeld) {

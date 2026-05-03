@@ -308,12 +308,15 @@ export class AWPWeapon {
   }
 
   aimOut() {
-    this.isADS = false;
-    this._group.visible = true;
-    this._scopeEl.style.display = 'none';
+    const wasADS   = this.isADS;
+    this.isADS     = false;
+    this._group.visible          = true;
+    this._scopeEl.style.display  = 'none';
     this.holdingBreath = false;
     this._breathTimer  = 0;
-    if (this._sound) this._sound.play('scope_out');
+    if (wasADS && this._sound) this._sound.play('scope_out');
+    // Only propagate if we were actually scoped — prevents double-fire on redundant aimOut calls
+    if (wasADS && this._onForceUnscope) this._onForceUnscope();
   }
 
   // ── Shoot ─────────────────────────────────────────────────────────────
