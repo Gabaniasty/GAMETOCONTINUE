@@ -392,33 +392,36 @@ class GameServer {
 
         if (distance > 300) return;
 
+        // Loose position sanity-check: server position lags behind client by
+        // one or more network ticks, so allow generous tolerance (25 units).
         const posDiff = Math.sqrt(
           (shooter.x - origin.x) ** 2 +
           (shooter.y - origin.y) ** 2 +
           (shooter.z - origin.z) ** 2
         );
-        if (posDiff > 6) return;
+        if (posDiff > 25) return;
 
-        // LOS check toward the claimed hit zone center
-        // target.y is the GLB character root (foot level)
         const isHead = hitZone === 'head';
         const targetCenter = {
           x: target.x,
           y: isHead ? (target.y + 1.55) : (target.y + 0.90),
           z: target.z,
         };
-        if (!this.isLineClearOfWalls(origin, targetCenter)) return;
 
+        // Loose aim-direction check: server target position is stale by up to
+        // several ticks, so use a wide angle tolerance (dot > 0.5 ≈ within 60°).
         const toTarget = {
           x: targetCenter.x - origin.x,
           y: targetCenter.y - origin.y,
           z: targetCenter.z - origin.z,
         };
         const len = Math.sqrt(toTarget.x ** 2 + toTarget.y ** 2 + toTarget.z ** 2);
-        const dot = (toTarget.x / len) * direction.x +
-                    (toTarget.y / len) * direction.y +
-                    (toTarget.z / len) * direction.z;
-        if (dot < 0.82) return;
+        if (len > 0.01) {
+          const dot = (toTarget.x / len) * direction.x +
+                      (toTarget.y / len) * direction.y +
+                      (toTarget.z / len) * direction.z;
+          if (dot < 0.5) return;
+        }
 
         shooter.isShooting = true;
         setTimeout(() => { if (this.players.has(socket.id)) this.players.get(socket.id).isShooting = false; }, 200);
