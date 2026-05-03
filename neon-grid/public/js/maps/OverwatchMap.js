@@ -676,109 +676,136 @@ export const OVERWATCH_NEST_TRIGGERS = [
   { minX:  24, maxX:  30, minY: 12.0, maxY: 15.0, minZ:  3.5, maxZ:  8.0, targetX:  40, targetY: 21.65, targetZ:  35 },
 ];
 
+// ── Ramp stair-step generator ──────────────────────────────────────────────────
+// Each step is ≤ 0.05 units tall so the engine's wall-collision tolerance
+// (feetY >= maxY - 0.05) is satisfied and the player can walk up smoothly.
+// Steps have minY = 0 (ground) so they also act as solid walls beside the ramp.
+function _genRampAABBs(minX, maxX, zLow, yLow, zHigh, yHigh) {
+  // Use 0.04 per step (safely below the 0.05 wall-collision tolerance)
+  // so floating-point rounding never causes feetY >= maxY_next - 0.05 to fail.
+  const N  = Math.ceil((yHigh - yLow) / 0.04);
+  const dz = (zHigh - zLow) / N;
+  const dy = (yHigh - yLow) / N;
+  const out = [];
+  for (let i = 0; i < N; i++) {
+    out.push({
+      minX, maxX,
+      minY: yLow,
+      maxY: yLow + dy * (i + 1),
+      minZ: zLow + dz * i,
+      maxZ: zLow + dz * (i + 1),
+    });
+  }
+  return out;
+}
+
 // ── Collision AABBs ────────────────────────────────────────────────────────────
 // Covers all solid surfaces for client physics and server LOS raycasting.
+// Walls are matched to actual _box() geometry: each wall is centered ON its
+// boundary coordinate and extends ±halfThickness from it.
 export const OVERWATCH_AABBS = [
   // ── Ground floor (full 100×100 slab) ──
   { minX: -50, maxX: 50, minY: -0.5, maxY: 0, minZ: -50, maxZ: 50 },
-  // ── Outer boundary walls (keep players in map) ──
-  { minX: -50, maxX:  50, minY: 0, maxY: 3, minZ:  -50, maxZ: -48.5 },
-  { minX: -50, maxX:  50, minY: 0, maxY: 3, minZ:  48.5, maxZ:  50  },
-  { minX: -50, maxX: -48.5, minY: 0, maxY: 3, minZ: -50, maxZ:  50  },
-  { minX:  48.5, maxX: 50, minY: 0, maxY: 3, minZ: -50, maxZ:  50   },
 
-  // ── West building shell ──
-  // West wall (full depth)
-  { minX: -30, maxX: -29, minY: 0, maxY: 12, minZ: -8, maxZ: 8 },
-  // East wall
-  { minX: -11, maxX: -10, minY: 0, maxY: 12, minZ: -8, maxZ: 8 },
-  // North face — left section (x=-30 to -23)
-  { minX: -30, maxX: -23, minY: 0, maxY: 12, minZ: -8, maxZ: -7 },
-  // North face — right section (x=-17 to -10)
-  { minX: -17, maxX: -10, minY: 0, maxY: 12, minZ: -8, maxZ: -7 },
-  // North door lintel (y=3.5 to 12, blocks bullets but not walking)
-  { minX: -23, maxX: -17, minY: 3.5, maxY: 12, minZ: -8, maxZ: -7 },
-  // South face — left section
-  { minX: -30, maxX: -23, minY: 0, maxY: 12, minZ: 7, maxZ: 8 },
-  // South face — right section
-  { minX: -17, maxX: -10, minY: 0, maxY: 12, minZ: 7, maxZ: 8 },
-  // South door lintel
-  { minX: -23, maxX: -17, minY: 3.5, maxY: 12, minZ: 7, maxZ: 8 },
+  // ── Outer boundary walls (invisible, keep players on the map) ──
+  { minX: -50, maxX:  50,   minY: 0, maxY: 3, minZ:  -50,  maxZ: -48.5 },
+  { minX: -50, maxX:  50,   minY: 0, maxY: 3, minZ:  48.5, maxZ:  50   },
+  { minX: -50, maxX: -48.5, minY: 0, maxY: 3, minZ:  -50,  maxZ:  50   },
+  { minX: 48.5, maxX:  50,  minY: 0, maxY: 3, minZ:  -50,  maxZ:  50   },
 
-  // ── West building interior ramp (staircase approximation for LOS) ──
-  { minX: -22, maxX: -18, minY: 0, maxY: 4,  minZ:  2, maxZ: 7  },
-  { minX: -22, maxX: -18, minY: 4, maxY: 8,  minZ: -4, maxZ: 2  },
-  { minX: -22, maxX: -18, minY: 8, maxY: 12, minZ: -7, maxZ: -4 },
+  // ══════════════════ WEST BUILDING (cx=-20) ═══════════════════════════════
+  // Each wall mesh is centered ON the boundary — so x/z extent = center ± 0.5
+  { minX: -30.5, maxX: -29.5, minY: 0, maxY: 12, minZ: -8, maxZ: 8 },  // west wall
+  { minX: -10.5, maxX:  -9.5, minY: 0, maxY: 12, minZ: -8, maxZ: 8 },  // east wall
 
-  // ── West rooftop slab (20×0.5×16) ──
-  { minX: -30, maxX: -10, minY: 12, maxY: 12.5, minZ: -8, maxZ: 8 },
+  // North face (z = -8 plane): two flanks + door lintel above y=3.5
+  { minX: -30, maxX: -23, minY: 0,   maxY: 12, minZ: -8.5, maxZ: -7.5 },
+  { minX: -17, maxX: -10, minY: 0,   maxY: 12, minZ: -8.5, maxZ: -7.5 },
+  { minX: -23, maxX: -17, minY: 3.5, maxY: 12, minZ: -8.5, maxZ: -7.5 },
 
-  // ── West rooftop low parapet walls ──
-  { minX: -30, maxX: -10,    minY: 12.5, maxY: 13.3, minZ: -8.5, maxZ: -8.0  },  // north
-  { minX: -30, maxX: -10,    minY: 12.5, maxY: 13.3, minZ:  8.0, maxZ:  8.5  },  // south
-  { minX: -30.5, maxX: -30,  minY: 12.5, maxY: 13.3, minZ: -8.0, maxZ:  8.0  },  // west
-  { minX: -10.5, maxX: -10,  minY: 12.5, maxY: 13.3, minZ: -8.0, maxZ: -2.5  },  // east-north
-  { minX: -10.5, maxX: -10,  minY: 12.5, maxY: 13.3, minZ:  2.5, maxZ:  8.0  },  // east-south
+  // South face (z = +8 plane)
+  { minX: -30, maxX: -23, minY: 0,   maxY: 12, minZ: 7.5, maxZ: 8.5 },
+  { minX: -17, maxX: -10, minY: 0,   maxY: 12, minZ: 7.5, maxZ: 8.5 },
+  { minX: -23, maxX: -17, minY: 3.5, maxY: 12, minZ: 7.5, maxZ: 8.5 },
 
-  // ── East building shell (mirrored) ──
-  { minX:  29, maxX:  30, minY: 0, maxY: 12, minZ: -8, maxZ: 8 },
-  { minX:  10, maxX:  11, minY: 0, maxY: 12, minZ: -8, maxZ: 8 },
-  { minX:  10, maxX:  17, minY: 0, maxY: 12, minZ: -8, maxZ: -7 },
-  { minX:  23, maxX:  30, minY: 0, maxY: 12, minZ: -8, maxZ: -7 },
-  { minX:  17, maxX:  23, minY: 3.5, maxY: 12, minZ: -8, maxZ: -7 },
-  { minX:  10, maxX:  17, minY: 0, maxY: 12, minZ: 7, maxZ: 8 },
-  { minX:  23, maxX:  30, minY: 0, maxY: 12, minZ: 7, maxZ: 8 },
-  { minX:  17, maxX:  23, minY: 3.5, maxY: 12, minZ: 7, maxZ: 8 },
+  // Interior cover crates (2×1.4×2 each, at four corners of the interior)
+  { minX: -28, maxX: -26, minY: 0, maxY: 1.4, minZ: -6, maxZ: -4 },
+  { minX: -28, maxX: -26, minY: 0, maxY: 1.4, minZ:  4, maxZ:  6 },
+  { minX: -14, maxX: -12, minY: 0, maxY: 1.4, minZ: -6, maxZ: -4 },
+  { minX: -14, maxX: -12, minY: 0, maxY: 1.4, minZ:  4, maxZ:  6 },
 
-  // ── East building interior ramp ──
-  { minX:  18, maxX:  22, minY: 0, maxY: 4,  minZ:  2, maxZ: 7  },
-  { minX:  18, maxX:  22, minY: 4, maxY: 8,  minZ: -4, maxZ: 2  },
-  { minX:  18, maxX:  22, minY: 8, maxY: 12, minZ: -7, maxZ: -4 },
+  // West rooftop slab (20×0.5×16) + parapets
+  { minX: -30, maxX: -10, minY: 12,   maxY: 12.5, minZ: -8,   maxZ: 8   },
+  { minX: -30, maxX: -10, minY: 12.5, maxY: 13.5, minZ: -8.5, maxZ: -8.0 },  // north parapet
+  { minX: -30, maxX: -10, minY: 12.5, maxY: 13.5, minZ:  8.0, maxZ:  8.5 },  // south parapet
+  { minX: -30.5, maxX: -30, minY: 12.5, maxY: 13.5, minZ: -8, maxZ: 8 },     // west parapet
+  { minX: -10.5, maxX: -10, minY: 12.5, maxY: 13.5, minZ: -8.0, maxZ: -2.5 }, // east-N parapet
+  { minX: -10.5, maxX: -10, minY: 12.5, maxY: 13.5, minZ:  2.5, maxZ:  8.0 }, // east-S parapet
 
-  // ── East rooftop slab ──
-  { minX:  10, maxX:  30, minY: 12, maxY: 12.5, minZ: -8, maxZ: 8 },
+  // Rooftop AC units (2.5×1.8×2.5 each)
+  { minX: -25.25, maxX: -22.75, minY: 12.5, maxY: 14.3, minZ: -5.25, maxZ: -2.75 },
+  { minX: -25.25, maxX: -22.75, minY: 12.5, maxY: 14.3, minZ:  2.75, maxZ:  5.25 },
+  { minX: -17.25, maxX: -14.75, minY: 12.5, maxY: 14.3, minZ: -1.25, maxZ:  1.25 },
 
-  // ── East rooftop low parapet walls ──
-  { minX:  10, maxX:  30,   minY: 12.5, maxY: 13.3, minZ: -8.5, maxZ: -8.0  },
-  { minX:  10, maxX:  30,   minY: 12.5, maxY: 13.3, minZ:  8.0, maxZ:  8.5  },
-  { minX:  30, maxX:  30.5, minY: 12.5, maxY: 13.3, minZ: -8.0, maxZ:  8.0  },
-  { minX:  10, maxX:  10.5, minY: 12.5, maxY: 13.3, minZ: -8.0, maxZ: -2.5  },
-  { minX:  10, maxX:  10.5, minY: 12.5, maxY: 13.3, minZ:  2.5, maxZ:  8.0  },
+  // ══════════════════ EAST BUILDING (cx=+20, mirrored) ═════════════════════
+  { minX:  9.5, maxX:  10.5, minY: 0, maxY: 12, minZ: -8, maxZ: 8 },   // west wall
+  { minX: 29.5, maxX:  30.5, minY: 0, maxY: 12, minZ: -8, maxZ: 8 },   // east wall
 
-  // ── North catwalk (west rooftop, extends north) ──
-  { minX: -23, maxX: -17, minY: 12, maxY: 12.4, minZ: -28, maxZ: -8 },
+  { minX: 10, maxX: 17, minY: 0,   maxY: 12, minZ: -8.5, maxZ: -7.5 },
+  { minX: 23, maxX: 30, minY: 0,   maxY: 12, minZ: -8.5, maxZ: -7.5 },
+  { minX: 17, maxX: 23, minY: 3.5, maxY: 12, minZ: -8.5, maxZ: -7.5 },
 
-  // ── South catwalk (east rooftop, extends south) ──
-  { minX:  17, maxX:  23, minY: 12, maxY: 12.4, minZ:  8, maxZ:  28 },
+  { minX: 10, maxX: 17, minY: 0,   maxY: 12, minZ: 7.5, maxZ: 8.5 },
+  { minX: 23, maxX: 30, minY: 0,   maxY: 12, minZ: 7.5, maxZ: 8.5 },
+  { minX: 17, maxX: 23, minY: 3.5, maxY: 12, minZ: 7.5, maxZ: 8.5 },
 
-  // ── Center bridge (40×0.5×6) ──
-  { minX: -20, maxX: 20, minY: 12, maxY: 12.5, minZ: -3, maxZ: 3 },
+  { minX: 12, maxX: 14, minY: 0, maxY: 1.4, minZ: -6, maxZ: -4 },
+  { minX: 12, maxX: 14, minY: 0, maxY: 1.4, minZ:  4, maxZ:  6 },
+  { minX: 26, maxX: 28, minY: 0, maxY: 1.4, minZ: -6, maxZ: -4 },
+  { minX: 26, maxX: 28, minY: 0, maxY: 1.4, minZ:  4, maxZ:  6 },
 
-  // ── NW sniper nest platform ──
-  { minX: -45, maxX: -35, minY: 20, maxY: 20.5, minZ: -40, maxZ: -30 },
-  // NW nest parapets (3 sides, open toward map center / SE)
-  { minX: -45, maxX: -35,   minY: 20.5, maxY: 21.7, minZ: -40.5, maxZ: -40 },   // north wall
-  { minX: -45.5, maxX: -45, minY: 20.5, maxY: 21.7, minZ: -40,   maxZ: -30 },   // west wall
-  { minX: -45, maxX: -35,   minY: 20.5, maxY: 21.7, minZ: -30,   maxZ: -29.5 }, // south wall (only partial)
+  { minX: 10, maxX: 30, minY: 12,   maxY: 12.5, minZ: -8,   maxZ:  8   },
+  { minX: 10, maxX: 30, minY: 12.5, maxY: 13.5, minZ: -8.5, maxZ: -8.0 },
+  { minX: 10, maxX: 30, minY: 12.5, maxY: 13.5, minZ:  8.0, maxZ:  8.5 },
+  { minX: 30, maxX: 30.5, minY: 12.5, maxY: 13.5, minZ: -8, maxZ: 8 },
+  { minX: 10, maxX: 10.5, minY: 12.5, maxY: 13.5, minZ: -8.0, maxZ: -2.5 },
+  { minX: 10, maxX: 10.5, minY: 12.5, maxY: 13.5, minZ:  2.5, maxZ:  8.0 },
 
-  // ── SE sniper nest platform ──
-  { minX:  35, maxX:  45, minY: 20, maxY: 20.5, minZ:  30, maxZ:  40 },
-  // SE nest parapets
-  { minX:  35, maxX:  45,   minY: 20.5, maxY: 21.7, minZ:  40,   maxZ:  40.5 }, // south wall
-  { minX:  45, maxX:  45.5, minY: 20.5, maxY: 21.7, minZ:  30,   maxZ:  40   }, // east wall
-  { minX:  35, maxX:  45,   minY: 20.5, maxY: 21.7, minZ:  29.5, maxZ:  30   }, // north wall (partial)
+  { minX: 14.75, maxX: 17.25, minY: 12.5, maxY: 14.3, minZ: -5.25, maxZ: -2.75 },
+  { minX: 14.75, maxX: 17.25, minY: 12.5, maxY: 14.3, minZ:  2.75, maxZ:  5.25 },
+  { minX: 22.75, maxX: 25.25, minY: 12.5, maxY: 14.3, minZ: -1.25, maxZ:  1.25 },
 
-  // ── Center antenna tower ──
-  { minX: -1.5, maxX: 1.5, minY:  0, maxY:  3, minZ: -1.5, maxZ: 1.5 },  // base
-  { minX: -0.5, maxX: 0.5, minY:  3, maxY: 21, minZ: -0.5, maxZ: 0.5 },  // shaft
+  // ══════════════════ CATWALKS / BRIDGE / ANTENNA ═══════════════════════════
+  { minX: -23, maxX: -17, minY: 12, maxY: 12.4, minZ: -28, maxZ: -8  },  // north catwalk
+  { minX:  17, maxX:  23, minY: 12, maxY: 12.4, minZ:   8, maxZ:  28 },  // south catwalk
+  { minX: -20, maxX:  20, minY: 12, maxY: 12.5, minZ:  -3, maxZ:   3 },  // center bridge
+  { minX: -1.5, maxX: 1.5, minY:  0, maxY:  3, minZ: -1.5, maxZ: 1.5 }, // antenna base
+  { minX: -0.5, maxX: 0.5, minY:  3, maxY: 21, minZ: -0.5, maxZ: 0.5 }, // antenna shaft
 
-  // ── Ground concrete barriers (8, plus pattern) ──
-  { minX: -4,    maxX:  4,    minY: 0, maxY: 1.4, minZ: -16.4, maxZ: -15.6 },
-  { minX: -4,    maxX:  4,    minY: 0, maxY: 1.4, minZ: -10.4, maxZ:  -9.6 },
-  { minX: -4,    maxX:  4,    minY: 0, maxY: 1.4, minZ:   9.6, maxZ:  10.4 },
-  { minX: -4,    maxX:  4,    minY: 0, maxY: 1.4, minZ:  15.6, maxZ:  16.4 },
-  { minX: -16.4, maxX: -15.6, minY: 0, maxY: 1.4, minZ:  -4,   maxZ:   4   },
-  { minX: -10.4, maxX:  -9.6, minY: 0, maxY: 1.4, minZ:  -4,   maxZ:   4   },
-  { minX:   9.6, maxX:  10.4, minY: 0, maxY: 1.4, minZ:  -4,   maxZ:   4   },
-  { minX:  15.6, maxX:  16.4, minY: 0, maxY: 1.4, minZ:  -4,   maxZ:   4   },
+  // ══════════════════ SNIPER NESTS ══════════════════════════════════════════
+  // NW nest — platform + north wall + west wall (open toward SE)
+  { minX: -45, maxX: -35,   minY: 20,   maxY: 20.5, minZ: -40,   maxZ: -30   },
+  { minX: -45, maxX: -35,   minY: 20.5, maxY: 21.7, minZ: -40.5, maxZ: -40.0 },
+  { minX: -45.5, maxX: -45, minY: 20.5, maxY: 21.7, minZ: -40,   maxZ: -30   },
+
+  // SE nest — platform + south wall + east wall (open toward NW)
+  { minX:  35, maxX:  45,   minY: 20,   maxY: 20.5, minZ:  30,   maxZ:  40   },
+  { minX:  35, maxX:  45,   minY: 20.5, maxY: 21.7, minZ:  40.0, maxZ:  40.5 },
+  { minX:  45, maxX:  45.5, minY: 20.5, maxY: 21.7, minZ:  30,   maxZ:  40   },
+
+  // ══════════════════ GROUND BARRIERS (8, plus pattern) ═════════════════════
+  { minX:  -4,    maxX:   4,    minY: 0, maxY: 1.4, minZ: -16.4, maxZ: -15.6 },
+  { minX:  -4,    maxX:   4,    minY: 0, maxY: 1.4, minZ: -10.4, maxZ:  -9.6 },
+  { minX:  -4,    maxX:   4,    minY: 0, maxY: 1.4, minZ:   9.6, maxZ:  10.4 },
+  { minX:  -4,    maxX:   4,    minY: 0, maxY: 1.4, minZ:  15.6, maxZ:  16.4 },
+  { minX: -16.4,  maxX: -15.6, minY: 0, maxY: 1.4, minZ:  -4,   maxZ:   4   },
+  { minX: -10.4,  maxX:  -9.6, minY: 0, maxY: 1.4, minZ:  -4,   maxZ:   4   },
+  { minX:   9.6,  maxX:  10.4, minY: 0, maxY: 1.4, minZ:  -4,   maxZ:   4   },
+  { minX:  15.6,  maxX:  16.4, minY: 0, maxY: 1.4, minZ:  -4,   maxZ:   4   },
+
+  // ══════════════════ BUILDING RAMPS (smooth stair-step AABBs) ══════════════
+  // Ramp surface: y = z + 6, running from (z=-6, y=0) [north/low] to (z=+6, y=12) [south/high].
+  // Enter from the north door, walk south to climb; walk north to descend.
+  ..._genRampAABBs(-22, -18, -6, 0, 6, 12),  // west building ramp
+  ..._genRampAABBs( 18,  22, -6, 0, 6, 12),  // east building ramp
 ];
