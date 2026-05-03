@@ -261,6 +261,50 @@ export class SoundEngine {
     this._noiseThru(t, 0.09, 0.4, 500, 'highpass', 1, w);
   }
 
+  // ── Remote player fire (distance-attenuated) ────────────────────────────
+  /**
+   * Play a muffled, quieter gunshot for a remote player.
+   * @param {number} distance  World-unit distance from local player to shooter.
+   */
+  play_remote_fire(distance) {
+    if (!this._c) return;
+    const ctx = this._c, t = ctx.currentTime, w = this._wd();
+    // Full volume ≤ 4 units away; silent ≥ 80 units away
+    const atten = Math.max(0, 1 - distance / 80);
+    if (atten < 0.01) return;
+    this.tone('sawtooth', 120, 25, 0.07, 0.9 * atten, t, w);
+    this._noiseThru(t, 0.10, 0.75 * atten, 140, 'lowpass', 1, w);
+    this.tone('sine', 50, 15, 0.16, 0.65 * atten, t, w);
+    this._noiseThru(t + 0.07, 1.8, 0.24 * atten, 220, 'bandpass', 0.3, w);
+  }
+
+  // ── Remote player footstep (distance-attenuated) ─────────────────────────
+  /**
+   * Play a muffled footstep for a remote player.
+   * @param {number} distance   World-unit distance from local player.
+   * @param {string} [surface]  'concrete' | 'metal' | 'grate'
+   */
+  play_remote_footstep(distance, surface = 'concrete') {
+    if (!this._c) return;
+    const ctx = this._c, t = ctx.currentTime;
+    // Full volume ≤ 2 units; silent ≥ 30 units
+    const atten = Math.max(0, 1 - distance / 30);
+    if (atten < 0.05) return;
+    const vol = 0.14 * atten;
+    const f   = this._fd();
+    if (surface === 'metal') {
+      this._noiseThru(t, 0.03, vol, 500, 'bandpass', 3, f);
+      this.tone('sine', 180, 70, 0.03, vol * 0.5, t, f);
+      this._noiseThru(t + 0.01, 0.05, vol * 0.25, 1100, 'highpass', 1, f);
+    } else if (surface === 'grate') {
+      this._noiseThru(t, 0.025, vol * 0.8, 1800, 'highpass', 1, f);
+      this._noiseThru(t, 0.04, vol * 0.6, 600, 'bandpass', 4, f);
+    } else {
+      this._noiseThru(t, 0.045, vol, 150, 'lowpass', 1, f);
+      this.tone('sine', 75, 32, 0.035, vol * 0.5, t, f);
+    }
+  }
+
   // ── Backward-compat shim used by AWPWeapon ───────────────────────────────
   play(name) {
     switch (name) {

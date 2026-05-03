@@ -25,6 +25,12 @@ const sound   = new SoundEngine();
 const postMatch  = new PostMatch(network._socket, () => network.getLocalId());
 const scoreboard = new Scoreboard(network._socket, () => network.getLocalId());
 
+// ── Remote player sound tracking ────────────────────────────────────
+// Maps player id → previous isShooting boolean (for rising-edge detection)
+const _remoteShootPrev  = new Map();
+// Maps player id → accumulated footstep timer (seconds)
+const _remoteFootTimers = new Map();
+
 // Resume / init audio context on any user gesture
 function _initAudio() {
   sound.init();
@@ -414,12 +420,54 @@ game._animate = function () {
   bullets.update(dt);
   bullets.updatePlayerHitboxes(network.getRemotePlayers());
 
-  // ── Footstep audio ────────────────────────────────────────────
+  // ── Footstep audio (local player) ────────────────────────────
   if (controls.isPlaying && !controls.isDead) {
     const hspd  = Math.sqrt(controls._vel.x ** 2 + controls._vel.z ** 2);
     const moving = hspd > 0.5 && controls._onGround;
     const surface = sound.detectSurface(game.collidableMeshes, camera.position);
     sound.updateFootsteps(dt, moving, hspd, controls.isSprinting(), surface);
+  }
+
+  // ── Remote player sounds (gunshots + footsteps) ───────────────
+  if (controls.isPlaying && !controls.isDead) {
+    const localPos = camera.position;
+    for (const rp of network.getRemotePlayers()) {
+      if (rp.dead) {
+        _remoteShootPrev.delete(rp.id);
+        _remoteFootTimers.delete(rp.id);
+        continue;
+      }
+
+      const dx   = rp.x - localPos.x;
+      const dy   = (rp.y ?? localPos.y) - localPos.y;
+      const dz   = rp.z - localPos.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+      // ── Gunshot: detect rising edge of isShooting ──────────────
+      const prevShoot = _remoteShootPrev.get(rp.id) ?? false;
+      if (rp.isShooting && !prevShoot) {
+        sound.play_remote_fire(dist);
+      }
+      _remoteShootPrev.set(rp.id, !!rp.isShooting);
+
+      // ── Footsteps: accumulate timer by velocity magnitude ───────
+      const vel = rp.velocity || { x: 0, y: 0, z: 0 };
+      const hspd = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+      const isMoving = hspd > 0.5;
+      if (isMoving) {
+        const isSprinting = hspd > 6.5;
+        const interval    = isSprinting ? 0.30 : 0.52;
+        const timer       = (_remoteFootTimers.get(rp.id) ?? 0) + dt;
+        if (timer >= interval) {
+          _remoteFootTimers.set(rp.id, timer - interval);
+          sound.play_remote_footstep(dist, 'concrete');
+        } else {
+          _remoteFootTimers.set(rp.id, timer);
+        }
+      } else {
+        _remoteFootTimers.set(rp.id, 0);
+      }
+    }
   }
 
   hud.tickFps(dt);
